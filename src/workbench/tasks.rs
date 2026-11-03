@@ -91,13 +91,22 @@ impl Hub {
             MacroTarget::macro_named(&request.name)
         };
         let plan = plan_target(&pack, target)?;
+        let success = if plan
+            .steps
+            .iter()
+            .any(|step| matches!(step, PlanStep::Expect { .. }))
+        {
+            "succeeded"
+        } else {
+            "completed"
+        };
         self.start_task(
             id,
             request.source,
             format!("Macro: {}", request.name),
             plan,
             false,
-            "succeeded",
+            success,
         )
         .await
     }

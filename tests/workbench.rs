@@ -312,3 +312,32 @@ async fn human_control_blocks_other_writers_but_keeps_readers_active() {
     assert_eq!(finished(&hub, &task.id).await.status, "succeeded");
     hub.shutdown().await;
 }
+
+#[tokio::test]
+async fn quick_script_sends_multiple_commands_without_claiming_response_match() {
+    let dir = tempfile::tempdir().unwrap();
+    let hub = Hub::new(dir.path().into()).await.unwrap();
+    let s = hub.open(demo()).await.unwrap();
+    let request = serde_json::from_value(json!({"name":"device status","source":"human","pack":{"schema_version":"0.3","name":"workbench-quick-scripts","macros":[{"name":"device status","steps":[{"type":"send","data":"date\r\n"},{"type":"delay","ms":20},{"type":"send","data":"uptime\r\n"}]}]}})).unwrap();
+    let task = hub.run_macro(&s.id, request).await.unwrap();
+    assert_eq!(finished(&hub, &task.id).await.status, "completed");
+    let events = hub
+        .events(
+            &s.id,
+            &EventQuery {
+                limit: Some(1000),
+                ..Default::default()
+            },
+            false,
+        )
+        .await
+        .unwrap();
+    let sent: Vec<_> = events
+        .events
+        .iter()
+        .filter(|e| e.direction == "tx")
+        .map(|e| e.text.as_str())
+        .collect();
+    assert_eq!(sent, vec!["date\r\n", "uptime\r\n"]);
+    hub.shutdown().await;
+}

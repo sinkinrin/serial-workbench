@@ -2,6 +2,8 @@
 
 ## Unreleased — Shared Serial Workbench
 
+- Add named quick scripts: save one or multiple text commands, choose line endings / intervals / optional response waits, and run through the shared macro queue.
+
 - Add editable keyword/color rules with ordering, enable toggles, case matching, live preview and browser-local persistence.
 
 - Compact the workbench into a viewport-sized layout with tool tabs and log focus mode; reassemble serial log lines and highlight device modules, counters, timing, warnings and errors without changing raw capture.

@@ -159,7 +159,7 @@ impl WorkbenchMcp {
         result(self.client.post(&format!("/api/sessions/{}/send",id(&a.session_id)?),json!({"data":a.data,"encoding":a.encoding.unwrap_or("utf8".into()),"source":"mcp","wait_for":a.wait_for,"timeout_ms":a.timeout_ms.unwrap_or(5000),"sensitive":a.sensitive})).await.map_err(error)?)
     }
     #[tool(
-        description = "Get task status and event range. sent only confirms transmission; succeeded means configured expectations matched. failed/cancelled must not be treated as success."
+        description = "Get task status and event range. sent only confirms transmission; succeeded means configured expectations matched; completed means a macro finished without response expectations. failed/cancelled must not be treated as success."
     )]
     async fn serial_task(
         &self,

@@ -160,6 +160,7 @@
       <aside class="inspector">
         <nav class="inspector-tabs" aria-label="操作面板">
           <button class="active" id="panel-send">发送</button
+          ><button id="panel-scripts">脚本</button
           ><button id="panel-tasks">
             协作 <span class="count-tag" id="task-count">0</span></button
           ><button id="panel-tools">工具</button>
@@ -212,10 +213,27 @@
               发送命令 <span>↗</span>
             </button>
           </form>
+          <button class="button small save-script-button" id="save-as-script">
+            存为快捷脚本
+          </button>
           <button class="button takeover" id="takeover" disabled>
             接管 · 取消待执行任务
           </button>
           <p class="hint">取消只停止后台流程，不会向设备发送中断。</p>
+        </section>
+        <section class="tool-panel hidden" id="tool-scripts">
+          <div class="section-title">
+            <h2>快捷脚本</h2>
+            <span class="count-tag" id="script-count">0</span>
+          </div>
+          <p class="hint" id="script-target">可离线编辑，连接设备后运行</p>
+          <button class="button small new-script-button" id="new-script">
+            ＋ 新建脚本
+          </button>
+          <div id="script-list" class="script-list"></div>
+          <p class="hint">
+            保存在当前浏览器，所有会话共用。保存不会执行，点击“运行”才会发送。
+          </p>
         </section>
         <section class="tasks-section tool-panel hidden" id="tool-tasks">
           <div class="section-title">
@@ -289,6 +307,89 @@
         </div>
       </aside>
     </div>
+    <dialog id="script-dialog" class="script-dialog">
+      <form id="script-form">
+        <div class="dialog-header">
+          <div>
+            <div class="eyebrow">QUICK SCRIPT</div>
+            <h2 id="script-dialog-title">新建快捷脚本</h2>
+          </div>
+          <button
+            type="button"
+            class="icon-button"
+            id="close-script-dialog"
+            aria-label="关闭脚本编辑器"
+          >
+            ×
+          </button>
+        </div>
+        <label
+          >脚本名称<input
+            id="script-name"
+            maxlength="64"
+            placeholder="例如：查看设备状态"
+            required
+        /></label>
+        <label
+          >命令内容<textarea
+            id="script-commands"
+            rows="6"
+            maxlength="65536"
+            placeholder="每行一条命令，例如：&#10;date&#10;uptime"
+            spellcheck="false"
+            required
+          ></textarea>
+        </label>
+        <div class="script-editor-caption">
+          <span id="script-line-count">0 条命令 · 空行忽略</span
+          ><span>按顺序发送到当前串口</span>
+        </div>
+        <div class="form-row">
+          <label
+            >每条命令的行尾<select id="script-newline">
+              <option value="crlf">CRLF</option>
+              <option value="lf">LF</option>
+              <option value="cr">CR</option>
+              <option value="none">无行尾</option>
+            </select></label
+          ><label
+            >命令间隔（毫秒）<input
+              id="script-interval"
+              type="number"
+              min="0"
+              max="60000"
+              step="1"
+              value="200"
+              required
+          /></label>
+        </div>
+        <details id="script-response-options" class="script-response-options">
+          <summary>每条命令后等待响应（可选）</summary>
+          <label
+            >等待出现的文本<input
+              id="script-wait-for"
+              maxlength="256"
+              placeholder="例如 demo&gt; 或设备的 shell 提示符" /></label
+          ><label
+            >每条命令的超时（毫秒）<input
+              id="script-timeout"
+              type="number"
+              min="1"
+              max="300000"
+              value="5000"
+              required
+          /></label>
+          <p class="hint">
+            匹配后才继续下一条，超时则停止脚本。留空时按间隔发送。
+          </p>
+        </details>
+        <div class="script-dialog-actions">
+          <button class="button" type="button" id="cancel-script-editor">
+            取消</button
+          ><button class="button primary" type="submit">保存脚本</button>
+        </div>
+      </form>
+    </dialog>
     <dialog id="connect-dialog">
       <form id="connect-form">
         <div class="dialog-header">

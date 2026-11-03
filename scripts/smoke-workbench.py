@@ -64,6 +64,13 @@ def main():
             task = cli('send', sid, '--data', 'cli-probe', '--newline', 'crlf', '--wait-for', 'OK', '--wait')
             assert task['status'] == 'succeeded'
 
+            script = {'name': 'quick-script', 'source': 'human', 'pack': {'schema_version': '0.3', 'name': 'workbench-quick-scripts', 'macros': [{'name': 'quick-script', 'steps': [{'type': 'send', 'data': 'script-first\r\n', 'encoding': 'utf8'}, {'type': 'delay', 'ms': 20}, {'type': 'send', 'data': 'script-second\r\n', 'encoding': 'utf8'}]}]}}
+            queued = api(f'/sessions/{sid}/macro', script)
+            assert cli('task', queued['id'], '--wait')['status'] == 'completed'
+            script_events = api(f'/sessions/{sid}/events?after=0&limit=1000')['events']
+            script_tx = [e['text'] for e in script_events if e['direction'] == 'tx' and e['task_id'] == queued['id']]
+            assert script_tx == ['script-first\r\n', 'script-second\r\n']
+
             async def shared_streams():
                 url = f'ws://127.0.0.1:{port}/api/sessions/{sid}/stream?after=0'
                 async with websockets.connect(url, origin=base) as a, websockets.connect(url, origin=base) as b:
@@ -146,7 +153,7 @@ def main():
             assert daemon.returncode == 0
             last_info = json.loads((pathlib.Path(directory) / last_id / 'session.json').read_bytes())
             assert last_info['state'] == 'closed' and last_info['active_task'] is None
-            print(json.dumps({'ok': True, 'checks': ['embedded web assets', 'CLI send/expect', 'WebSocket fan-out', 'cursor reconnect', 'MCP discovery and send', 'MCP detach keeps capture', 'timeout exit status', 'disk history', 'raw export', 'graceful daemon shutdown'], 'mcp_tools': len(tools)}, indent=2))
+            print(json.dumps({'ok': True, 'checks': ['embedded web assets', 'CLI send/expect', 'quick script ordered batch', 'WebSocket fan-out', 'cursor reconnect', 'MCP discovery and send', 'MCP detach keeps capture', 'timeout exit status', 'disk history', 'raw export', 'graceful daemon shutdown'], 'mcp_tools': len(tools)}, indent=2))
         finally:
             if mcp and mcp.poll() is None:
                 mcp.terminate()

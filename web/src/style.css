@@ -1292,3 +1292,147 @@ body.focus-mode .inspector {
     justify-content: flex-end;
   }
 }
+.save-script-button {
+  width: 100%;
+  margin-top: 8px;
+}
+.new-script-button {
+  width: 100%;
+  margin: 2px 0 14px;
+}
+.script-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.script-card {
+  border: 1px solid #dfe7e2;
+  border-radius: 8px;
+  padding: 11px;
+  background: #f9fbfa;
+}
+.script-card h3 {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 600;
+  color: #375c4e;
+  overflow-wrap: anywhere;
+}
+.script-meta {
+  color: #8f9d95;
+  font-size: 9px;
+  line-height: 1.7;
+  margin: 7px 0;
+}
+.script-card pre {
+  margin: 8px 0 11px;
+  background: #eef3f0;
+  border-radius: 5px;
+  padding: 8px;
+  color: #587266;
+  font:
+    10px/1.8 "Cascadia Code",
+    Consolas,
+    monospace;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.script-card-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.script-card-actions .button {
+  margin-right: auto;
+}
+.delete-script {
+  color: #b07b70;
+}
+.script-empty {
+  padding: 22px 12px;
+  border: 1px dashed #dce5de;
+  border-radius: 8px;
+  text-align: center;
+}
+.script-empty strong {
+  font-size: 11px;
+  font-weight: 500;
+  color: #749084;
+}
+.script-empty p {
+  margin: 10px 0 0;
+  color: #9aa89f;
+  font-size: 10px;
+  line-height: 1.9;
+}
+.script-dialog {
+  width: min(620px, calc(100vw - 30px));
+  max-height: calc(100dvh - 36px);
+  overflow: auto;
+  padding: 24px;
+}
+.script-dialog label > input,
+.script-dialog label > textarea {
+  display: block;
+  margin-top: 7px;
+  width: 100%;
+}
+.script-dialog textarea {
+  resize: vertical;
+  min-height: 135px;
+  max-height: 300px;
+  font:
+    12px/1.75 "Cascadia Code",
+    Consolas,
+    "Microsoft YaHei",
+    monospace;
+}
+.script-editor-caption {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 7px;
+  font-size: 10px;
+  color: #9aa69e;
+}
+.script-response-options {
+  margin-top: 15px;
+}
+.script-dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 20px;
+}
+@media (max-width: 1150px) {
+  .inspector-tabs {
+    gap: 0;
+  }
+  .inspector-tabs button {
+    font-size: 11px;
+    padding-left: 1px;
+    padding-right: 1px;
+  }
+  .inspector-tabs .count-tag {
+    margin-left: 1px;
+    padding: 2px 3px;
+  }
+}
+@media (max-height: 700px) {
+  .script-dialog {
+    padding: 18px;
+  }
+  .script-dialog label {
+    margin-top: 9px;
+  }
+  .script-dialog textarea {
+    min-height: 100px;
+  }
+  .script-dialog-actions {
+    margin-top: 14px;
+  }
+}
+
+.task-status.completed {
+  color: #6a9579;
+}

@@ -1,3 +1,4 @@
+import { initQuickScripts } from "./script-panel";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import "./style.css";
@@ -73,6 +74,7 @@ const labels: Record<string, string> = {
   running: "执行中",
   sent: "已发送",
   succeeded: "条件已满足",
+  completed: "流程完成",
   failed: "失败",
   cancelled: "已取消",
   human: "你",
@@ -97,6 +99,7 @@ let renderPending = false,
   decoder = new TextDecoder(),
   toastTimer: number | undefined,
   macroPack: any = null;
+let updateScriptConnection = () => {};
 let colorSettings = defaultColors();
 try {
   colorSettings = parseColors(localStorage.getItem(COLOR_STORAGE_KEY));
@@ -184,6 +187,7 @@ function notice(text: string) {
   $("notice").classList.toggle("hidden", !text);
 }
 function enabled() {
+  updateScriptConnection();
   const active = current?.state === "connected";
   for (const id of ["send", "takeover", "disconnect", "set-control", "ctrl-c"])
     button(id).disabled = !active;
@@ -864,12 +868,12 @@ void refresh();
 
 // Keep the sidebar tools within the viewport rather than stacking tall sections.
 function showPanel(name: string) {
-  for (const other of ["send", "tasks", "tools"]) {
+  for (const other of ["send", "scripts", "tasks", "tools"]) {
     $(`panel-${other}`).classList.toggle("active", name === other);
     $(`tool-${other}`).classList.toggle("hidden", name !== other);
   }
 }
-for (const name of ["send", "tasks", "tools"])
+for (const name of ["send", "scripts", "tasks", "tools"])
   action(`panel-${name}`, () => showPanel(name));
 action("focus-view", () => {
   const focused = document.body.classList.toggle("focus-mode");
@@ -1058,3 +1062,19 @@ window.addEventListener("storage", (event) => {
   }
 });
 renderColorRules();
+
+updateScriptConnection = initQuickScripts({
+  getSession: () => current,
+  getComposer: () => ({
+    commands: ($("command") as HTMLTextAreaElement).value,
+    encoding: select("encoding").value,
+    newline: select("newline").value,
+    waitFor: input("wait-for").value,
+    timeoutMs: Number(input("timeout").value),
+    sensitive: input("sensitive").checked,
+  }),
+  request: (path, body) => api(path, body),
+  notify: toast,
+  showTasks: () => showPanel("tasks"),
+  showScripts: () => showPanel("scripts"),
+});
