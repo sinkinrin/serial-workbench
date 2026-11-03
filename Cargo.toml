@@ -1,13 +1,14 @@
 [package]
-name = "serial-mcp-server"
-version = "0.3.0"
+name = "serial-workbench"
+version = "0.1.0"
 edition = "2021"
+default-run = "serial-workbench"
 rust-version = "1.85"
-authors = ["adancurusul <adancurusul@gmail.com>"]
-description = "An MCP server and scriptable CLI for serial port communication"
+authors = ["sinkinrin", "adancurusul <adancurusul@gmail.com>"]
+description = "Shared serial workbench with a browser UI, persistent logs, command scripts, CLI and MCP"
 license = "MIT"
 readme = "README.md"
-repository = "https://github.com/adancurusul/serial-mcp-server"
+repository = "https://github.com/sinkinrin/serial-workbench"
 keywords = ["mcp", "serial", "communication", "embedded", "protocol"]
 categories = ["development-tools", "embedded"]
 

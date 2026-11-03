@@ -1,327 +1,150 @@
-# 串口 MCP 服务器
+# Serial Workbench · 串口工作台
 
-## 共享串口工作台
+**一个串口连接，你和 AI 一起用。**
 
-本分支在原项目基础上增加独立后台、浏览器界面、JSON CLI 和共享 MCP 适配器。Windows 可运行 `start-workbench.cmd`，或执行 `cargo run --bin serial-workbench -- serve`。原直接串口模式继续保留；共享模式统一使用 `serial-workbench`。详见[工作台使用说明](docs/WORKBENCH_ZH.md)。
+独立后台持有串口，网页、CLI 和 MCP 共用日志与命令队列。你可以持续看设备输出，也能查看 AI 究竟发送了什么命令、收到了什么回复。
 
-[![Rust](https://img.shields.io/badge/rust-1.85+-orange.svg)](https://rust-lang.org)
-[![RMCP](https://img.shields.io/badge/RMCP-0.3.2-blue.svg)](https://github.com/modelcontextprotocol/rust-sdk)
-[![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
+版本 **0.1.0** · [English](README.md) · [下载](https://github.com/sinkinrin/serial-workbench/releases) · [完整使用说明](docs/WORKBENCH_ZH.md)
 
-`serial-mcp-server` 为 AI 工作流提供串口访问能力，包含两种使用方式：
+## 功能
 
-- 面向 MCP 客户端的 stdio MCP 服务器。
-- 面向脚本、CI 和 agent skill 的直接 CLI，不需要先配置 MCP。
+- **后台持续采集**：关闭网页或断开 MCP 不停止录制，原始字节和带时间戳的事件轮转落盘。
+- **一屏调试界面**：实时日志、交互终端、文本/HEX、搜索、暂停、历史查询与导出；支持自定义关键词与颜色、匹配优先级和大小写规则。
+- **共享快捷脚本**：单条或多条命令，配置行尾、间隔和响应等待；网页、CLI、MCP 使用同一份脚本，修改时检查版本。
+- **可追溯的协作记录**：卡片显示命令、来源、端口和状态；详情展示发送/等待/间隔步骤及实际 TX/RX，重启后仍可查看。
+- **人工接管**：接管后阻止新的 AI/CLI 发送并取消排队任务，释放后恢复协作。所有命令串行执行，日志继续采集。
+- **适合 AI 的访问方式**：默认 JSON 的 CLI、15 个 MCP 工具、互不消耗的日志游标；大量历史日志可以直接读本地文件。
 
-当前发布目标：`0.3.0`。
+## 下载与启动
 
-语言版本：[English](README.md) | [中文](README_ZH.md)
+从 [v0.1.0](https://github.com/sinkinrin/serial-workbench/releases/tag/v0.1.0) 下载 **Windows x64** 成品包 `serial-workbench-0.1.0-windows-x86_64.zip`，解压后双击 `start-workbench.cmd`。
 
-## 0.3.0 更新简报
+启动器会在后台运行服务，并打开 `http://127.0.0.1:8765`。无需安装 Rust、Node.js 或额外的网页服务器；USB 串口适配器仍需对应的 Windows 驱动。
 
-- 新增 JSON Macro DSL，用于可复用的串口自动化流程。
-- 新增 CLI macro 命令：`macro validate`、`macro list`、`macro plan`、`macro run`。
-- 新增 MCP macro 工具，支持运行时内存加载、列出、卸载、规划和运行 macro pack。
-- 新增无硬件 simulation，用于 macro 验证、规划和 executor smoke test。
-- 不提供独立 Quick API。Quick 风格用法应表达为 macro。
+也可以在 PowerShell 中直接启动：
 
-## Macro 自动化
-
-当串口流程不只是一次 read 或 write 时，可以使用 macro。很多设备有时序要求：先发送一个命令，等待几毫秒，读取直到出现提示符或确认响应，再发送下一个命令。Macro pack 用 JSON 记录这个过程，让人、CLI 脚本或 AI agent 都可以先验证、查看计划、在无硬件时仿真，再在接入真实设备后运行。
-
-典型使用场景：
-
-- 设备启动、烧录、配置或 provisioning 流程，需要按顺序发送命令并插入 delay。
-- 协议握手，需要等待 `OK`、`READY`、`PONG`、提示符或其他特定响应。
-- 回归 smoke test，需要反复执行同一组串口步骤。
-- AI 辅助调试，需要 agent 先审查完整的 send/delay/expect 计划，再触碰真实硬件。
-
-v0.3 DSL 有意保持很小：
-
-- `send`：写入 UTF-8、hex 或 base64 字节。
-- `delay`：等待固定毫秒数。
-- `expect`：读取直到响应包含或等于期望字节。
-- `assembly`：把多个已命名 macro 组合成更长流程。
-
-AI agent 可以通过本 README、仓库内置的 `skills/serial-debug` skill、`serial-mcp-server macro --help`，或已配置 MCP server 时的 tool discovery 发现 macro 能力。不使用 MCP 的 agent 也可以直接走 CLI + skill 文档。
-
-## 环境要求
-
-- Rust 1.85 或更新版本。
-- 执行硬件操作时需要串口设备或 USB 转串口适配器。
-- 系统需要具备对应串口驱动和端口访问权限。
-
-## 从源码安装
-
-```bash
-git clone https://github.com/adancurusul/serial-mcp-server.git
-cd serial-mcp-server
-cargo build --release
+```powershell
+.\serial-workbench.exe serve
 ```
 
-构建后的二进制文件位于：
+打开网页，点击「新建连接」，选择真实端口和设备参数。程序不会在启动时自动打开串口。「打开模拟设备」是独立标注的试用入口，真实调试请选择物理端口。
 
-```bash
-target/release/serial-mcp-server
+使用网页、CLI 或 MCP 时保持后台运行。默认仅监听本机；更改端口或数据目录：
+
+```powershell
+.\serial-workbench.exe serve --port 8766 --data-dir C:\SerialLogs
+.\serial-workbench.exe --url http://127.0.0.1:8766 status
 ```
 
-如果要从当前 checkout 安装到 `PATH`：
+## CLI：直接调用共享后台
 
-```bash
-cargo install --path . --locked
+以下命令都访问同一个后台，默认输出 JSON：
+
+```powershell
+serial-workbench ports
+serial-workbench sessions
+serial-workbench open --port COM6 --baud 115200
+serial-workbench events <session-id> --after 0 --limit 100
+serial-workbench send <session-id> --data uptime --newline crlf --wait --details
+serial-workbench task <task-id> --details
+serial-workbench scripts list
+serial-workbench scripts show <script-id>
+serial-workbench scripts run <script-id> <session-id> --revision 1 --wait --details
 ```
 
-## CLI 使用
+按设备调整端口和命令；已有连接时复用 session ID。日志返回的 `next_cursor` 作为下次查询的 `after`，各查看者互不影响。
 
-如果不想配置 MCP 客户端，可以直接使用 CLI。
+`--wait` 等待主机任务结束。没有响应检查时，单次发送显示 `sent`，脚本显示 `completed`；所有等待条件匹配后显示 `succeeded`。这些不是设备命令的退出码，取消也不能撤销已发送字节。
 
-```bash
-serial-mcp-server --help
-serial-mcp-server list-ports --json
-serial-mcp-server probe --port <port> --baud 115200 --json
-serial-mcp-server write --port <port> --baud 115200 --data H --read --timeout-ms 1000 --json
-serial-mcp-server read --port <port> --baud 115200 --timeout-ms 1000 --json
-serial-mcp-server read --port <port> --baud 115200 --duration-ms 5000 --initial-timeout-ms 30000 --idle-timeout-ms 1500 --json
-serial-mcp-server set-control-lines --port <port> --rts high --dtr low --json
+```powershell
+serial-workbench takeover <session-id>
+serial-workbench release <session-id>
+serial-workbench cancel <task-id>
+serial-workbench stop
 ```
 
-### 采集窗口读取
+`stop` 会关闭整个后台和所有会话；仅退出 CLI 或 MCP 客户端不会。
 
-`timeout-ms` 保持原有含义：等待一次 read 操作，收到第一批字节后立即返回。
+## MCP 接入
 
-如果 AI 或脚本需要一次有边界的连续采集，使用 `--duration-ms`。采集模式会在服务器内部持续读取，并一次性返回合并数据、`completion_reason`、`waited_ms`、`elapsed_ms` 和每个 chunk 的元数据。
-
-```bash
-serial-mcp-server read --port <port> --baud 115200 \
-  --duration-ms 5000 \
-  --start-trigger first-byte \
-  --initial-timeout-ms 30000 \
-  --idle-timeout-ms 1500 \
-  --max-bytes 8192 \
-  --json
-```
-
-采集参数：
-
-- `--duration-ms`：采集开始后的窗口时长。
-- `--start-trigger first-byte`：先等待第一批数据，收到后才开始计算采集时长。这是采集模式默认值。
-- `--start-trigger immediate`：命令开始时就开始计算采集时长。
-- `--initial-timeout-ms`：first-byte 模式下最多等多久开始采集。不传时使用 `--timeout-ms`。
-- `--idle-timeout-ms`：采集开始后，连续空闲多久就提前停止。
-- `--max-bytes`：合并返回数据的硬上限。
-
-`write --read` 也支持同一组采集参数：
-
-```bash
-serial-mcp-server write --port <port> --baud 115200 --data RUN --read \
-  --duration-ms 5000 --initial-timeout-ms 30000 --json
-```
-
-Macro 自动化命令：
-
-```bash
-serial-mcp-server macro validate --file examples/macros/ping.json --json
-serial-mcp-server macro list --file examples/macros/ping.json --json
-serial-mcp-server macro plan --file examples/macros/ping.json --macro ping --json
-serial-mcp-server macro run --file examples/macros/ping.json --macro ping --dry-run --json
-serial-mcp-server macro run --file examples/macros/ping.json --macro ping --simulate-read PONG --json
-serial-mcp-server macro run --file examples/macros/ping.json --macro ping --port <port> --baud 115200 --json
-```
-
-Macro pack 是 `schema_version` 为 `0.3` 的 JSON 文件。v0.3 支持 macro 内的 `send`、`delay`、`expect` 步骤，以及按名称调用 macro 的 assembly。`expect` 支持 `contains` 和 `equals`。
-
-Macro DSL 是受限 DSL，不执行 shell、JavaScript、Python、文件操作、循环、变量、if/else、Quick 命令或 RTS/DTR macro 步骤。
-
-配置命令：
-
-```bash
-serial-mcp-server generate-config
-serial-mcp-server validate-config --config serial-mcp.toml
-serial-mcp-server show-config --config serial-mcp.toml
-```
-
-CLI 输出规则：
-
-- stdout 只输出命令数据和 JSON。
-- stderr 用于诊断信息。
-- `--json` 输出应能被 `jq` 等工具解析。
-- 非零退出码表示命令失败。
-
-CLI 支持的数据格式是 `utf8`、`hex` 和 `base64`。二进制载荷请使用 `hex` 或 `base64`。
-
-## MCP 使用
-
-当客户端支持 MCP 工具，并且你希望启动长运行的 stdio server 时使用 MCP。
-
-推荐的服务命令：
-
-```bash
-serial-mcp-server serve
-```
-
-无子命令启动仍保留为兼容路径；新配置建议显式使用 `serve`。
-
-Claude Desktop macOS/Linux 示例：
+先启动后台，再让 MCP 客户端运行适配器：
 
 ```json
 {
   "mcpServers": {
-    "serial": {
-      "command": "/path/to/serial-mcp-server/target/release/serial-mcp-server",
-      "args": ["serve"],
-      "env": {
-        "RUST_LOG": "info"
-      }
+    "serial-workbench": {
+      "command": "C:\\Tools\\SerialWorkbench\\serial-workbench.exe",
+      "args": ["mcp"]
     }
   }
 }
 ```
 
-Windows 示例：
-
-```json
-{
-  "mcpServers": {
-    "serial": {
-      "command": "C:\\path\\to\\serial-mcp-server\\target\\release\\serial-mcp-server.exe",
-      "args": ["serve"],
-      "env": {
-        "RUST_LOG": "info"
-      }
-    }
-  }
-}
-```
-
-## MCP 工具
+这是通用示例，配置位置取决于客户端；Linux/macOS 使用自行构建的可执行文件路径。MCP 不是必需的，有本地命令执行能力的 AI 也可以直接调用 CLI。
 
 | 工具 | 用途 |
 | --- | --- |
-| `list_ports` | 发现可用串口。 |
-| `open` | 打开串口连接。 |
-| `write` | 向已打开连接写入 UTF-8、hex 或 base64 数据。 |
-| `read` | 从已打开连接读取数据，支持单次超时读取或有边界的采集窗口。 |
-| `close` | 关闭已打开连接。 |
-| `set_control_lines` | 设置已打开连接的 RTS 和/或 DTR。 |
-| `logging_start` | 持续把收到的原始字节写入轮转日志，并保留有上限的内存尾部。 |
-| `logging_status` | 查看一个或全部记录会话的统计和错误。 |
-| `logging_tail` | 不消费数据，查看最近记录的字节。 |
-| `logging_stop` | 停止记录、刷新文件并返回最终统计。 |
-| `macro_load` | 验证并把 inline macro pack 或 pack 文件路径加载到服务器内存 registry。 |
-| `macro_list` | 列出已加载的 macro pack、macro 和 assembly。 |
-| `macro_unload` | 从内存 registry 移除已加载的 macro pack。 |
-| `macro_plan` | 无硬件展开已加载、inline 或文件形式的 macro 或 assembly。 |
-| `macro_run` | 基于已有连接或显式 simulation 输入运行已加载 macro 或 assembly。 |
-| `macro_run_inline` | 不存入 registry，直接验证、规划并运行 inline macro pack。 |
+| `serial_ports`、`serial_sessions`、`serial_open` | 查看端口，复用或建立会话 |
+| `serial_events` | 按游标读取日志，不消耗其他查看者的数据 |
+| `serial_send`、`serial_macro` | 排队执行命令或 JSON 宏 |
+| `serial_task`、`serial_cancel` | 查询命令、回包和状态，或取消任务 |
+| `serial_scripts`、`serial_script_get`、`serial_script_save` | 列出、查看和保存共享脚本 |
+| `serial_script_run`、`serial_script_delete` | 按版本运行或删除脚本 |
+| `serial_control`、`serial_close` | 显式操作控制线或关闭会话 |
 
-MCP macro registry 只在运行时保存在内存中。服务器重启会清空已加载 pack，服务器不会写入持久 macro 库。
+`serial_task` 默认返回详情，只轮询状态时传 `details:false`。AI 应先查看脚本内容，再带 `revision` 运行。你持有控制权时，AI 的新发送会被拒绝。
 
-MCP `read` 除了 `connection_id`、`timeout_ms`、`max_bytes` 和 `encoding`，还支持这些采集字段：
+## 保存位置与升级
 
-```json
-{
-  "connection_id": "...",
-  "duration_ms": 5000,
-  "start_trigger": "first_byte",
-  "initial_timeout_ms": 30000,
-  "idle_timeout_ms": 1500,
-  "max_bytes": 8192,
-  "encoding": "utf8"
-}
-```
+启动器将数据保存在程序旁的 `workbench-data/`。直接执行 `serve` 时相对于当前工作目录保存，也可通过 `--data-dir` 指定。
 
-不传 `duration_ms` 时，MCP `read` 保持原有单次读取行为。传入 `duration_ms` 后，工具返回结构化 JSON 文本，包含 `completion_reason`、`waited_ms`、`elapsed_ms` 和 `chunks`。
+| 路径 | 内容 |
+| --- | --- |
+| `scripts.json` | 共享脚本库 |
+| `tasks/<task-id>.json` | 命令、执行结果和有界的收发详情 |
+| `<session-id>/session.json` | 端口参数、状态和计数 |
+| `<session-id>/rx.log*` | 原始接收字节，每文件 10 MiB，每会话最多 5 个 |
+| `<session-id>/events.jsonl*` | 带时间戳的事件，每文件 20 MiB，每会话最多 5 个 |
 
-### 后台串口日志
+任务详情最多保留 64 KiB / 512 个事件，采集到结束后一秒或下一任务开始为止，可能包含设备主动输出的后台日志。缺口和截断会明确标注，较长回复请查会话历史。异常中断的任务不会自动重放。
 
-在 `open` 之后调用 `logging_start`，可以连续采集几分钟或几小时，而不必把大量输出反复返回给 MCP 客户端：
+旧浏览器脚本首次使用时迁入共享库，原本地备份保留；配色偏好仍按浏览器保存。升级时保留 `workbench-data`，更换可执行文件前停止后台。历史会话目录和任务文件不会自动清理。
 
-```json
-{
-  "connection_id": "...",
-  "path": "C:\\captures\\device.log",
-  "max_file_size_bytes": 10485760,
-  "max_files": 5,
-  "ring_buffer_bytes": 262144
-}
-```
+日志可能包含凭据。「隐藏输入」会隐藏 TX 内容和任务详情中的收发窗口，但设备回显仍可能进入原始 RX 日志，分享前需要检查。
 
-当前文件使用指定的 `path`，旧文件依次轮转为 `.1`、`.2` 等。记录会话和内存 tail 只存在于本次服务器进程中，但已经写出的日志文件会在 MCP 服务器退出后保留。`logging_tail` 可以用 `utf8`、`hex` 或 `base64` 查看最近字节，不需要读取整个文件。
+## 源码构建与验证
 
-记录会话会独占串口的读取方向。记录期间，普通 MCP `read` 和真实硬件 macro 会被拒绝，避免两个读取者拆分或漏掉数据；MCP `write` 仍然可用，设备响应会被后台记录。调用 `close` 或服务器退出时，会先停止并刷新记录。
-
-原始串口日志可能包含控制台密码、Wi-Fi 密钥、FTP 凭据、token 等秘密。请将日志保存到访问受限的目录，不要直接公开分享，并在附加到问题报告前脱敏。
-
-## Agent Skill
-
-仓库内包含兼容 Claude Code 和 Codex 的 skill：
-
-```text
-skills/serial-debug/
-```
-
-该 skill 优先使用 CLI，并把 MCP 作为可选的已配置路径。适用于 agent 列出串口、运行串口 smoke test、运行 macro 自动化、控制 RTS/DTR 或排查 UART/USB 串口问题。
-
-本地开发时，可以把 skill 复制到 agent 的 skill 根目录：
+建议使用当前稳定版 Rust；此版本在 Windows / Rust 1.94.1 下验证。仓库已包含编译好的前端，普通构建无需 Node.js。
 
 ```bash
-mkdir -p ~/.codex/skills ~/.claude/skills ~/.agents/skills
-cp -R skills/serial-debug ~/.codex/skills/
-cp -R skills/serial-debug ~/.claude/skills/
-cp -R skills/serial-debug ~/.agents/skills/
+git clone https://github.com/sinkinrin/serial-workbench.git
+cd serial-workbench
+cargo build --release --locked --bins
+cargo run --locked -- serve
 ```
 
-已测试的显式触发方式：
-
-```text
-Codex: Use $serial-debug
-Claude Code: /serial-debug
-```
-
-本地测试中，Claude Code `--bare` 模式没有解析 `/serial-debug`；skill 触发 smoke test 请使用普通 Claude Code print 或交互模式。
-
-## 硬件安全
-
-串口命令会影响真实硬件。
-
-- 先通过 `serial-mcp-server list-ports --json` 确认端口。
-- 连接适配器前确认目标板电平兼容。
-- 写入前确认波特率、数据位、校验位、停止位和流控。
-- 谨慎操作 RTS 和 DTR。很多开发板会把这些线连接到 reset 或 boot mode。
-- 验证结论应基于已连接设备上的实际命令输出。
-
-## STM32 示例
-
-STM32 示例位于：
-
-```text
-examples/STM32_demo/
-```
-
-它提供一个交互式串口命令固件。接线、固件命令、MCP 使用和 CLI smoke 命令见 [examples/STM32_demo/README.md](examples/STM32_demo/README.md)。
-
-## 质量门
-
-发布工作使用仓库内的 `Cargo.lock`，并执行以下质量门：
+修改前端需要 Node.js 22+：
 
 ```bash
-cargo fmt --all -- --check
+cd web
+npm ci
+npm run check
+npm test
+npm run build
+cd ..
+cargo fmt --all --check
 cargo clippy --locked --all-targets --all-features -- -D warnings
 cargo test --locked --all-targets --all-features
-cargo doc --locked --all-features --no-deps
+python -m pip install websockets
+python scripts/smoke-workbench.py target/release/serial-workbench.exe
 ```
 
-CLI smoke：
+Linux/macOS 使用不带 `.exe` 的路径，Linux 可能需要系统的 libudev 开发包。本次只提供 Windows x64 成品包。自动冒烟测试使用隔离模拟设备；另外已验证真实 COM6/CH340 的采集和只读命令组。USB 拔插恢复及电气行为不在这些验证范围内。
 
-```bash
-cargo run --locked -- --help
-cargo run --locked -- list-ports --json
-cargo run --locked -- write --help
-cargo run --locked -- set-control-lines --help
-cargo run --locked -- macro validate --file examples/macros/ping.json --json
-cargo run --locked -- macro run --file examples/macros/ping.json --macro ping --simulate-read PONG --json
-```
+## 来源与兼容性
 
-## 许可证
+基于 [Adancurusul/serial-mcp-server](https://github.com/Adancurusul/serial-mcp-server)，保留原始提交历史、MIT 许可和作者署名。Serial Workbench 从 **0.1.0** 开始独立版本系列。
 
-本项目采用 MIT 许可证。详情见 [LICENSE](LICENSE)。
+兼容保留 `serial-mcp-server` 直接串口程序和 `serial_mcp_server` Rust 库名。直接模式不要打开工作台已占用的端口，详见[旧版 CLI/MCP](docs/LEGACY_CLI_ZH.md)；原有 `skills/serial-debug` 也使用该直接模式。宏 JSON 的 `schema_version` 继续为 `0.3`，与产品版本独立。
+
+[MIT 许可证](LICENSE) · [更新记录](CHANGELOG.md)

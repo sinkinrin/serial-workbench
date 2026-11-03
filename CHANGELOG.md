@@ -1,6 +1,12 @@
 # Changelog
 
-## Unreleased — Shared Serial Workbench
+## 0.1.0 — Serial Workbench (2026-11-03)
+
+First independent Serial Workbench release, derived from serial-mcp-server 0.3.0. The upstream release history below is retained; the macro JSON schema remains `0.3`.
+
+- Rename the project and Cargo package to `serial-workbench`; make the shared workbench the default executable and retain the legacy direct-access binary/library.
+- Replace the English and Chinese READMEs with workbench-first setup, shared CLI/MCP usage and attribution.
+- Publish a portable Windows x64 package with launchers, documentation and checksums.
 
 - Show command previews and expandable planned steps / actual TX-RX details; persist task records across daemon restarts and mark unfinished work interrupted without replay.
 - Share saved scripts across GUI, CLI and MCP with revision checks, immutable execution snapshots and one-time migration from browser storage. Add five MCP script tools and CLI `--details`.

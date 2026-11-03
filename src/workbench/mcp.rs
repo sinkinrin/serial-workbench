@@ -179,7 +179,7 @@ impl WorkbenchMcp {
         )
     }
     #[tool(
-        description = "Queue a send task. Data is sent exactly as provided; include CR/LF explicitly. Optional wait_for verifies a response within timeout_ms. Returns a task ID immediately; serial_task gives completion and event cursors. sensitive hides TX records only; device echo remains captured."
+        description = "Queue a send task. Data is sent exactly as provided; include CR/LF explicitly. Optional wait_for verifies a response within timeout_ms. Returns a task ID immediately; serial_task gives completion and event cursors. sensitive hides TX payloads and task-detail transcripts; device echo remains in raw capture."
     )]
     async fn serial_send(
         &self,

@@ -1569,8 +1569,8 @@ dependencies = [
 ]
 
 [[package]]
-name = "serial-mcp-server"
-version = "0.3.0"
+name = "serial-workbench"
+version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-trait",

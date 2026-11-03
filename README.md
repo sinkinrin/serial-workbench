@@ -1,346 +1,150 @@
-# Serial MCP Server
+# Serial Workbench
 
-## Shared Serial Workbench
+**One serial connection. Shared by you and your AI tools.**
 
-This fork adds a persistent shared serial daemon, embedded browser UI, JSON CLI and MCP adapter. Run `start-workbench.cmd` on Windows, or build and run `cargo run --bin serial-workbench -- serve`. The original direct-access CLI/MCP is retained. See [the workbench guide](docs/WORKBENCH_ZH.md) for architecture, commands, log retention and verification.
+A single background process owns the serial port. The browser, CLI and MCP adapter share its logs and command queue, so you can keep watching the device and see exactly what the AI sent.
 
-[![Rust](https://img.shields.io/badge/rust-1.85+-orange.svg)](https://rust-lang.org)
-[![RMCP](https://img.shields.io/badge/RMCP-0.3.2-blue.svg)](https://github.com/modelcontextprotocol/rust-sdk)
-[![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
+Version **0.1.0** · [中文](README_ZH.md) · [Downloads](https://github.com/sinkinrin/serial-workbench/releases) · [Detailed guide (Chinese)](docs/WORKBENCH_ZH.md)
 
-`serial-mcp-server` provides serial port access for AI workflows in two forms:
+## Features
 
-- MCP stdio server for clients that support MCP tools.
-- Scriptable CLI for direct use, CI, and agent skills without MCP setup.
+- **Continuous capture:** closing the browser or an MCP client leaves the daemon recording to rotating local files.
+- **Compact browser workspace:** live logs, interactive terminal, text/HEX, search, pause, history and export. Custom keyword colors support priority and case matching.
+- **Shared scripts:** save single commands or batches with line endings, delays and response waits. The browser, CLI and MCP share the library with revision checks.
+- **Useful operation history:** command previews, source, port and status; expandable send/wait/delay steps and actual TX/RX. Records survive restarts.
+- **Human control:** take over to block new AI/CLI writes and cancel queued work; release to resume sharing. All commands use one ordered queue.
+- **Efficient AI access:** JSON CLI, 15 MCP tools and independent event cursors. Large historical searches can read local files directly.
 
-Current release target: `0.3.0`.
+## Download and start
 
-Language versions: [English](README.md) | [Chinese](README_ZH.md)
+Download **Windows x64** package `serial-workbench-0.1.0-windows-x86_64.zip` from [v0.1.0](https://github.com/sinkinrin/serial-workbench/releases/tag/v0.1.0), extract it, and double-click `start-workbench.cmd`.
 
-## 0.3.0 Update Brief
+The launcher starts the daemon and opens `http://127.0.0.1:8765`. No Rust, Node.js or separate web server is needed. Your serial adapter still needs its Windows driver.
 
-- Added JSON Macro DSL automation for repeatable serial procedures.
-- Added CLI macro commands: `macro validate`, `macro list`, `macro plan`, and `macro run`.
-- Added MCP macro tools for runtime in-memory pack load/list/unload, plan, and run.
-- Added explicit no-hardware simulation for macro validation, planning, and executor smoke tests.
-- Kept Quick out of the public API. Quick-style use cases should be represented as macros.
+Or run from PowerShell:
 
-## Macro Automation
-
-Use macros when a serial workflow is more than a single read or write. Many devices require a timed sequence: send a command, wait a few milliseconds, read until a prompt or acknowledgement appears, then send the next command. A macro pack records that procedure as JSON so a human, CLI script, or AI agent can validate it, inspect the plan, simulate it without hardware, and run it against a real port when a device is attached.
-
-Typical macro use cases:
-
-- Boot or provisioning flows that need ordered commands and delays.
-- Protocol handshakes that must wait for `OK`, `READY`, `PONG`, prompts, or other expected responses.
-- Regression smoke tests where the same serial procedure should run repeatedly.
-- AI-assisted debugging where the agent should review the full send/delay/expect plan before touching hardware.
-
-The v0.3 DSL is intentionally small:
-
-- `send`: write UTF-8, hex, or base64 bytes.
-- `delay`: wait for a fixed number of milliseconds.
-- `expect`: read until the response contains or equals expected bytes.
-- `assembly`: compose named macros into a longer workflow.
-
-AI agents can discover macro support from this README, from the bundled `skills/serial-debug` skill, by running `serial-mcp-server macro --help`, or through MCP tool discovery when the server is configured. Agents that do not use MCP can still use the CLI plus the skill docs.
-
-## Requirements
-
-- Rust 1.85 or newer.
-- A serial device or USB-to-serial adapter when running hardware operations.
-- Device drivers and OS permissions for the selected serial port.
-
-## Install From Source
-
-```bash
-git clone https://github.com/adancurusul/serial-mcp-server.git
-cd serial-mcp-server
-cargo build --release
+```powershell
+.\serial-workbench.exe serve
 ```
 
-The binary is built at:
+Open `http://127.0.0.1:8765`, choose **New connection**, and select the real port and device settings. Startup does not automatically open hardware. **Open simulated device** is a separate, labeled option for trying the UI.
 
-```bash
-target/release/serial-mcp-server
+Keep the daemon running while using clients. It listens locally by default. To change its port or data directory:
+
+```powershell
+.\serial-workbench.exe serve --port 8766 --data-dir C:\SerialLogs
+.\serial-workbench.exe --url http://127.0.0.1:8766 status
 ```
 
-To install the CLI onto your `PATH` from a checkout:
+## Shared CLI
 
-```bash
-cargo install --path . --locked
+These commands all use the daemon, without competing for its port. Output is JSON by default.
+
+```powershell
+serial-workbench ports
+serial-workbench sessions
+serial-workbench open --port COM6 --baud 115200
+serial-workbench events <session-id> --after 0 --limit 100
+serial-workbench send <session-id> --data uptime --newline crlf --wait --details
+serial-workbench task <task-id> --details
+serial-workbench scripts list
+serial-workbench scripts show <script-id>
+serial-workbench scripts run <script-id> <session-id> --revision 1 --wait --details
 ```
 
-## CLI Usage
+Adjust ports and commands for your device. Reuse an existing session when available. Pass the returned `next_cursor` as the next query's `after`; readers do not consume each other's data.
 
-Use the CLI when you want direct serial operations without an MCP client.
+`--wait` waits for the host task. Without response checks, a send reports `sent` and a script reports `completed`. Matching all configured checks reports `succeeded`. These are not device process exit codes. Cancellation cannot undo sent bytes.
 
-```bash
-serial-mcp-server --help
-serial-mcp-server list-ports --json
-serial-mcp-server probe --port <port> --baud 115200 --json
-serial-mcp-server write --port <port> --baud 115200 --data H --read --timeout-ms 1000 --json
-serial-mcp-server read --port <port> --baud 115200 --timeout-ms 1000 --json
-serial-mcp-server read --port <port> --baud 115200 --duration-ms 5000 --initial-timeout-ms 30000 --idle-timeout-ms 1500 --json
-serial-mcp-server set-control-lines --port <port> --rts high --dtr low --json
+```powershell
+serial-workbench takeover <session-id>
+serial-workbench release <session-id>
+serial-workbench cancel <task-id>
+serial-workbench stop
 ```
 
-### Capture Window Reads
+`stop` closes the daemon and all sessions. Exiting a CLI or MCP client does not.
 
-`timeout-ms` keeps its original one-read meaning: wait up to that many
-milliseconds for one read operation, then return as soon as bytes are available.
+## MCP
 
-Use `--duration-ms` when an AI or script needs one bounded collection window.
-Capture mode keeps reading internally and returns one combined response with
-`completion_reason`, `waited_ms`, `elapsed_ms`, and per-chunk metadata.
-
-```bash
-serial-mcp-server read --port <port> --baud 115200 \
-  --duration-ms 5000 \
-  --start-trigger first-byte \
-  --initial-timeout-ms 30000 \
-  --idle-timeout-ms 1500 \
-  --max-bytes 8192 \
-  --json
-```
-
-Capture options:
-
-- `--duration-ms`: collection window length after capture starts.
-- `--start-trigger first-byte`: wait for the first byte before starting the
-  duration clock. This is the default for capture mode.
-- `--start-trigger immediate`: start the duration clock when the command starts.
-- `--initial-timeout-ms`: maximum wait for the first byte in first-byte mode.
-  If omitted, the command uses `--timeout-ms`.
-- `--idle-timeout-ms`: stop after this many quiet milliseconds once capture has
-  started.
-- `--max-bytes`: hard cap on the combined response bytes.
-
-`write --read` accepts the same capture options after the write:
-
-```bash
-serial-mcp-server write --port <port> --baud 115200 --data RUN --read \
-  --duration-ms 5000 --initial-timeout-ms 30000 --json
-```
-
-Macro automation commands:
-
-```bash
-serial-mcp-server macro validate --file examples/macros/ping.json --json
-serial-mcp-server macro list --file examples/macros/ping.json --json
-serial-mcp-server macro plan --file examples/macros/ping.json --macro ping --json
-serial-mcp-server macro run --file examples/macros/ping.json --macro ping --dry-run --json
-serial-mcp-server macro run --file examples/macros/ping.json --macro ping --simulate-read PONG --json
-serial-mcp-server macro run --file examples/macros/ping.json --macro ping --port <port> --baud 115200 --json
-```
-
-Macro packs are JSON files with `schema_version` set to `0.3`. v0.3 supports `send`, `delay`, and `expect` steps inside macros, plus assemblies that call macros by name. `expect` supports `contains` and `equals`.
-
-The macro DSL is intentionally restricted. It does not run shell commands, JavaScript, Python, file operations, loops, variables, if/else branches, Quick commands, or RTS/DTR macro steps.
-
-Configuration commands:
-
-```bash
-serial-mcp-server generate-config
-serial-mcp-server validate-config --config serial-mcp.toml
-serial-mcp-server show-config --config serial-mcp.toml
-```
-
-CLI output rules:
-
-- stdout is reserved for command data and JSON.
-- stderr is reserved for diagnostics.
-- `--json` output should be parseable by tools such as `jq`.
-- Nonzero exit codes indicate command failure.
-
-Supported CLI data formats are `utf8`, `hex`, and `base64`. Use `hex` or `base64` for binary payloads.
-
-## MCP Usage
-
-Use MCP when your client supports MCP tools and you want a long-running stdio server.
-
-Recommended server command:
-
-```bash
-serial-mcp-server serve
-```
-
-No-subcommand startup is retained as a compatibility path for existing MCP setups, but new configurations should use `serve`.
-
-Claude Desktop example for macOS/Linux:
+Start the daemon first, then configure your MCP client to run the adapter:
 
 ```json
 {
   "mcpServers": {
-    "serial": {
-      "command": "/path/to/serial-mcp-server/target/release/serial-mcp-server",
-      "args": ["serve"],
-      "env": {
-        "RUST_LOG": "info"
-      }
+    "serial-workbench": {
+      "command": "C:\\Tools\\SerialWorkbench\\serial-workbench.exe",
+      "args": ["mcp"]
     }
   }
 }
 ```
 
-Windows example:
+This is a generic example; the configuration location depends on the client. On Linux/macOS use your source-built executable path. MCP is optional: agents with local command access can use the CLI.
 
-```json
-{
-  "mcpServers": {
-    "serial": {
-      "command": "C:\\path\\to\\serial-mcp-server\\target\\release\\serial-mcp-server.exe",
-      "args": ["serve"],
-      "env": {
-        "RUST_LOG": "info"
-      }
-    }
-  }
-}
-```
-
-## MCP Tools
-
-| Tool | Purpose |
+| Tools | Purpose |
 | --- | --- |
-| `list_ports` | Discover available serial ports. |
-| `open` | Open a serial connection. |
-| `write` | Write UTF-8, hex, or base64 data to an open connection. |
-| `read` | Read data from an open connection with timeout handling or a bounded capture window. |
-| `close` | Close an open connection. |
-| `set_control_lines` | Set RTS and/or DTR on an open connection. |
-| `logging_start` | Continuously record raw received bytes to rotating files and a bounded in-memory tail. |
-| `logging_status` | Show statistics and errors for one or all recording sessions. |
-| `logging_tail` | Inspect the newest recorded bytes without consuming them. |
-| `logging_stop` | Stop a recording session, flush its file, and return final statistics. |
-| `macro_load` | Validate and load an inline macro pack or pack file path into the server's in-memory registry. |
-| `macro_list` | List loaded macro packs, macros, and assemblies. |
-| `macro_unload` | Remove a loaded macro pack from the in-memory registry. |
-| `macro_plan` | Expand a loaded, inline, or file-backed macro or assembly without opening hardware. |
-| `macro_run` | Run a loaded macro or assembly against an existing connection or explicit simulation input. |
-| `macro_run_inline` | Validate, plan, and run an inline macro pack without storing it in the registry. |
+| `serial_ports`, `serial_sessions`, `serial_open` | Discover ports and reuse/open sessions |
+| `serial_events` | Non-consuming cursor reads |
+| `serial_send`, `serial_macro` | Queue commands or JSON macros |
+| `serial_task`, `serial_cancel` | Inspect commands/responses/status or cancel |
+| `serial_scripts`, `serial_script_get`, `serial_script_save` | List, review and save shared scripts |
+| `serial_script_run`, `serial_script_delete` | Run a reviewed revision or delete a script |
+| `serial_control`, `serial_close` | Explicit control-line changes and session close |
 
-The MCP macro registry is runtime-only. Restarting the server clears loaded packs, and the server does not write a persistent macro library.
+`serial_task` returns details by default; use `details:false` for lightweight status polling. Review scripts before running and pass their revision. New AI writes are rejected while the human holds control.
 
-MCP `read` accepts these optional capture fields in addition to
-`connection_id`, `timeout_ms`, `max_bytes`, and `encoding`:
+## Data and upgrades
 
-```json
-{
-  "connection_id": "...",
-  "duration_ms": 5000,
-  "start_trigger": "first_byte",
-  "initial_timeout_ms": 30000,
-  "idle_timeout_ms": 1500,
-  "max_bytes": 8192,
-  "encoding": "utf8"
-}
-```
+The launcher stores data in `workbench-data/` beside the application. Direct `serve` uses the current directory unless `--data-dir` is supplied.
 
-When `duration_ms` is absent, MCP `read` keeps the existing single-read
-behavior. When `duration_ms` is present, the tool returns structured JSON text
-with `completion_reason`, `waited_ms`, `elapsed_ms`, and `chunks`.
+| Path | Content |
+| --- | --- |
+| `scripts.json` | Shared script library |
+| `tasks/<task-id>.json` | Commands, outcomes and bounded TX/RX details |
+| `<session-id>/session.json` | Port settings, state and counters |
+| `<session-id>/rx.log*` | Raw bytes; 10 MiB per file, up to 5 per session |
+| `<session-id>/events.jsonl*` | Events; 20 MiB per file, up to 5 per session |
 
-### Background serial logging
+Task details retain up to 64 KiB / 512 events, ending one second after completion or at the next task. They may include unsolicited device logs. Gaps and truncation are marked; longer replies remain in session history. Interrupted tasks are never automatically replayed.
 
-Use `logging_start` after `open` when output must be collected for minutes or
-hours without repeatedly returning it to the MCP client:
+Browser-local scripts migrate to the shared library while keeping the old backup. Colors remain browser-local. Preserve `workbench-data` on upgrade and stop the daemon before replacing its executable. Old session directories and task files are not automatically removed.
 
-```json
-{
-  "connection_id": "...",
-  "path": "C:\\captures\\device.log",
-  "max_file_size_bytes": 10485760,
-  "max_files": 5,
-  "ring_buffer_bytes": 262144
-}
-```
+Logs may contain credentials. Hidden input masks TX and task-detail transcripts, but raw RX can still contain device echoes. Review files before sharing.
 
-The active file is the requested `path`; older files are rotated to `.1`,
-`.2`, and so on. The session registry and in-memory tail are runtime-only, but
-the log files remain after the MCP server exits. `logging_tail` can return the
-newest bytes as `utf8`, `hex`, or `base64` without reading the files.
+## Build and verify
 
-A recording session owns the serial read direction. While it is active,
-ordinary MCP `read` and real-hardware macro runs are rejected so two consumers
-cannot split or lose incoming bytes. MCP `write` remains available, and replies
-are captured by the recorder. `close` and server shutdown stop and flush the
-recorder first.
-
-Raw serial logs can contain console passwords, Wi-Fi keys, FTP credentials,
-tokens, and other secrets. Store them in a restricted directory, avoid sharing
-them unchanged, and redact sensitive values before attaching them to reports.
-
-## Agent Skill
-
-The repository includes a Claude Code and Codex compatible skill at:
-
-```text
-skills/serial-debug/
-```
-
-The skill is CLI-first and documents MCP as an optional configured path. It is intended for agents that need to list ports, run serial smoke tests, run macro automation, control RTS/DTR, or troubleshoot UART/USB-serial devices.
-
-For local development, copy the skill folder into the agent skill roots:
+Use a current stable Rust toolchain; this release was tested on Windows with Rust 1.94.1. Web assets are checked in and embedded. Node.js is only needed to change the UI.
 
 ```bash
-mkdir -p ~/.codex/skills ~/.claude/skills ~/.agents/skills
-cp -R skills/serial-debug ~/.codex/skills/
-cp -R skills/serial-debug ~/.claude/skills/
-cp -R skills/serial-debug ~/.agents/skills/
+git clone https://github.com/sinkinrin/serial-workbench.git
+cd serial-workbench
+cargo build --release --locked --bins
+cargo run --locked -- serve
 ```
 
-Tested explicit triggers:
-
-```text
-Codex: Use $serial-debug
-Claude Code: /serial-debug
-```
-
-Claude Code `--bare` mode did not resolve `/serial-debug` in local testing; use normal Claude Code print or interactive mode for skill-trigger smoke tests.
-
-## Hardware Safety
-
-Serial commands can affect real hardware.
-
-- Confirm the selected port from `serial-mcp-server list-ports --json`.
-- Confirm voltage levels before connecting an adapter to a target board.
-- Confirm baud rate, data bits, parity, stop bits, and flow control before writing.
-- Treat RTS and DTR carefully. Many boards wire those lines to reset or boot mode.
-- Validation claims should be based on command output from the connected device.
-
-## STM32 Demo
-
-The STM32 demo is under:
-
-```text
-examples/STM32_demo/
-```
-
-It provides firmware for an interactive serial command interface. See [examples/STM32_demo/README.md](examples/STM32_demo/README.md) for wiring, firmware commands, MCP usage, and CLI smoke commands.
-
-## Quality Gates
-
-Release work uses the checked-in `Cargo.lock` and these gates:
+Frontend development requires Node.js 22+:
 
 ```bash
-cargo fmt --all -- --check
+cd web
+npm ci
+npm run check
+npm test
+npm run build
+cd ..
+cargo fmt --all --check
 cargo clippy --locked --all-targets --all-features -- -D warnings
 cargo test --locked --all-targets --all-features
-cargo doc --locked --all-features --no-deps
+python -m pip install websockets
+python scripts/smoke-workbench.py target/release/serial-workbench.exe
 ```
 
-CLI smoke:
+Linux/macOS use the path without `.exe`; Linux may require libudev development packages. Only Windows x64 binaries ship in this release. Automated smoke tests use isolated simulation. Real COM6/CH340 capture and read-only batches were also verified; USB hotplug recovery and electrical behavior were not.
 
-```bash
-cargo run --locked -- --help
-cargo run --locked -- list-ports --json
-cargo run --locked -- write --help
-cargo run --locked -- set-control-lines --help
-cargo run --locked -- macro validate --file examples/macros/ping.json --json
-cargo run --locked -- macro run --file examples/macros/ping.json --macro ping --simulate-read PONG --json
-```
+## Origin and compatibility
 
-## License
+Derived from [Adancurusul/serial-mcp-server](https://github.com/Adancurusul/serial-mcp-server), retaining original history, MIT licensing and author attribution. Serial Workbench starts its own release series at **0.1.0**.
 
-This project is licensed under the MIT License. See [LICENSE](LICENSE).
+The `serial-mcp-server` direct-access binary and `serial_mcp_server` Rust library name remain compatible. Do not use direct mode on a port owned by the workbench. See [legacy CLI/MCP](docs/LEGACY_CLI.md); the existing `skills/serial-debug` also documents that legacy path. Macro JSON `schema_version` remains `0.3`, independently of the product version.
+
+[MIT license](LICENSE) · [Changelog](CHANGELOG.md)

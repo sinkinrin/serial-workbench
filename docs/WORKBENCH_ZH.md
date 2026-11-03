@@ -1,5 +1,7 @@
 # Serial Workbench — 共享串口工作台
 
+当前版本：`0.1.0` · 仓库：[sinkinrin/serial-workbench](https://github.com/sinkinrin/serial-workbench)。
+
 基于 [Adancurusul/serial-mcp-server](https://github.com/adancurusul/serial-mcp-server) 的独立开发分支，保留原项目 MIT 许可、版权及提交历史。原有 `serial-mcp-server` CLI/MCP 与本地后台录制功能继续保留。
 
 `serial-workbench` 是新的共享模式：一个后台进程持有串口，网页、CLI 和 MCP 连接同一个会话。关闭网页、CLI 退出或 MCP 断开不停止采集。主动关闭会话会影响所有使用者。

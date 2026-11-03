@@ -1,8 +1,7 @@
-//! Serial MCP Server Library
+//! Serial Workbench library.
 //!
-//! A comprehensive Model Context Protocol server for serial port communication.
-//! Provides AI assistants with serial communication capabilities including
-//! port discovery, connection management, data transmission, and protocol handling.
+//! Shared serial capture, browser UI, persistent tasks and scripts, CLI and MCP.
+//! The `serial_mcp_server` library name and direct-access APIs are retained for compatibility.
 
 pub mod automation;
 pub mod cli;
