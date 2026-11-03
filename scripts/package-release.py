@@ -13,10 +13,12 @@ out.mkdir(parents=True, exist_ok=True)
 files = {
     'serial-workbench.exe': root / 'target/release/serial-workbench.exe',
     'serial-mcp-server.exe': root / 'target/release/serial-mcp-server.exe',
+    'THIRD_PARTY_NOTICES.txt': root / 'web/THIRD_PARTY_NOTICES.txt',
 }
 for relative in ['README.md', 'README_ZH.md', 'LICENSE', 'CHANGELOG.md',
                  'start-workbench.cmd', 'scripts/start-workbench.ps1',
-                 'docs/WORKBENCH_ZH.md', 'docs/LEGACY_CLI.md', 'docs/LEGACY_CLI_ZH.md']:
+                 'docs/WORKBENCH_ZH.md', 'docs/LEGACY_CLI.md', 'docs/LEGACY_CLI_ZH.md',
+                 'docs/releases/v' + version + '.md']:
     files[relative] = root / relative
 for binary in ['serial-workbench.exe', 'serial-mcp-server.exe']:
     actual = subprocess.check_output([str(files[binary]), '--version'], text=True).strip()
