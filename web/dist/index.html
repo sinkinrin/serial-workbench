@@ -19,7 +19,13 @@
         ><span class="separator"></span
         ><span class="local-label">LOCAL WORKSPACE</span>
       </div>
-      <button class="button primary" id="new-session">＋ 新建连接</button>
+      <div class="top-actions">
+        <button class="button small compact-toggle" id="show-sessions">
+          会话</button
+        ><button class="button small compact-toggle" id="show-controls">
+          操作</button
+        ><button class="button primary" id="new-session">＋ 新建连接</button>
+      </div>
     </header>
     <div class="workspace">
       <aside class="sidebar">
@@ -68,6 +74,7 @@
               ><button class="tab" id="terminal-tab">交互终端</button>
             </div>
             <div class="viewer-actions">
+              <button class="button small" id="focus-view">专注日志</button>
               <span class="live-badge" id="stream-state">等待连接</span
               ><button
                 class="icon-button"
@@ -136,6 +143,10 @@
               继续加载历史</button
             ><button id="return-live" class="text-button hidden">
               返回实时日志 →</button
+            ><span class="log-legend" title="字段配色不会修改原始日志"
+              ><i class="token-dms">DMS</i><i class="token-adas">ADAS</i
+              ><i class="token-tsr">TSR</i><i class="token-warning">注意</i
+              ><i class="token-error">错误</i></span
             ><span id="capture-status">采集由后台独立运行</span>
           </div>
         </section>
@@ -146,7 +157,13 @@
         </div>
       </main>
       <aside class="inspector">
-        <section class="command-section">
+        <nav class="inspector-tabs" aria-label="操作面板">
+          <button class="active" id="panel-send">发送</button
+          ><button id="panel-tasks">
+            协作 <span class="count-tag" id="task-count">0</span></button
+          ><button id="panel-tools">工具</button>
+        </nav>
+        <section class="command-section tool-panel" id="tool-send">
           <div class="section-title">
             <h2>发送命令</h2>
             <span class="tiny-tag">HUMAN</span>
@@ -155,7 +172,7 @@
           <form id="send-form">
             <textarea
               id="command"
-              rows="4"
+              rows="3"
               placeholder="输入命令，例如 uptime"
               aria-label="发送内容"
               spellcheck="false"
@@ -199,50 +216,51 @@
           </button>
           <p class="hint">取消只停止后台流程，不会向设备发送中断。</p>
         </section>
-        <section class="tasks-section">
+        <section class="tasks-section tool-panel hidden" id="tool-tasks">
           <div class="section-title">
             <h2>协作记录</h2>
-            <span class="count-tag" id="task-count">0</span>
           </div>
           <div id="tasks">
             <p class="muted empty-tasks">你、CLI 和 AI 的任务会显示在这里。</p>
           </div>
         </section>
-        <section class="macro-section">
-          <details>
-            <summary>运行自动化宏</summary>
-            <p class="hint">沿用 JSON 宏格式，执行时日志采集继续。</p>
-            <input
-              id="macro-file"
-              type="file"
-              accept=".json,application/json"
-              aria-label="选择宏文件"
-            /><select id="macro-name" aria-label="选择宏" disabled></select
-            ><button class="button" id="run-macro" disabled>运行宏</button>
-          </details>
-        </section>
-        <section class="control-section">
-          <details>
-            <summary>RTS / DTR 控制线</summary>
-            <div class="form-row">
-              <label
-                >RTS<select id="rts">
-                  <option value="">保持</option>
-                  <option value="true">高</option>
-                  <option value="false">低</option>
-                </select></label
-              ><label
-                >DTR<select id="dtr">
-                  <option value="">保持</option>
-                  <option value="true">高</option>
-                  <option value="false">低</option>
-                </select></label
-              >
-            </div>
-            <p class="hint">电平变化可能触发设备复位。</p>
-            <button class="button" id="set-control" disabled>应用电平</button>
-          </details>
-        </section>
+        <div class="tool-panel hidden" id="tool-tools">
+          <section class="macro-section">
+            <details>
+              <summary>运行自动化宏</summary>
+              <p class="hint">沿用 JSON 宏格式，执行时日志采集继续。</p>
+              <input
+                id="macro-file"
+                type="file"
+                accept=".json,application/json"
+                aria-label="选择宏文件"
+              /><select id="macro-name" aria-label="选择宏" disabled></select
+              ><button class="button" id="run-macro" disabled>运行宏</button>
+            </details>
+          </section>
+          <section class="control-section">
+            <details>
+              <summary>RTS / DTR 控制线</summary>
+              <div class="form-row">
+                <label
+                  >RTS<select id="rts">
+                    <option value="">保持</option>
+                    <option value="true">高</option>
+                    <option value="false">低</option>
+                  </select></label
+                ><label
+                  >DTR<select id="dtr">
+                    <option value="">保持</option>
+                    <option value="true">高</option>
+                    <option value="false">低</option>
+                  </select></label
+                >
+              </div>
+              <p class="hint">电平变化可能触发设备复位。</p>
+              <button class="button" id="set-control" disabled>应用电平</button>
+            </details>
+          </section>
+        </div>
       </aside>
     </div>
     <dialog id="connect-dialog">

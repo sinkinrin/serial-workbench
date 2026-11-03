@@ -1,6 +1,7 @@
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import "./style.css";
+import { logLines, logParts, severity } from "./log-format";
 
 type Session = {
   id: string;
@@ -263,6 +264,7 @@ async function refresh() {
   window.setTimeout(refresh, 1200);
 }
 function choose(id: string) {
+  document.body.classList.remove("sessions-open");
   revision++;
   clearTimeout(keyboardTimer);
   keyboard = "";
@@ -362,56 +364,66 @@ function scheduleRender() {
     render();
   });
 }
-function stripAnsi(s: string) {
-  return s
-    .replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, "")
-    .replace(/\x1b\][^\x07]*(?:\x07|\x1b\\)/g, "");
-}
 function render() {
   if (!current) return;
-  const filter = input("filter").value.toLowerCase(),
-    direction = select("direction").value;
-  const filtered = events.filter(
+  const filter = input("filter").value.toLowerCase();
+  const direction = select("direction").value;
+  const hexMode = select("display").value === "hex";
+  const rows = hexMode
+    ? events.map((e) => ({
+        ...e,
+        content:
+          e.direction !== "system" && e.base64
+            ? Array.from(raw(e), (n) => n.toString(16).padStart(2, "0")).join(
+                " ",
+              )
+            : e.text,
+        lastSeq: e.seq,
+      }))
+    : logLines(events);
+  const filtered = rows.filter(
     (e) =>
       (direction === "all" || e.direction === direction) &&
-      (!filter || (e.decoded ?? e.text).toLowerCase().includes(filter)),
+      (!filter || e.content.toLowerCase().includes(filter)),
   );
   const view = $("log-view");
   const bottom = view.scrollHeight - view.scrollTop - view.clientHeight < 80;
   const fragment = document.createDocumentFragment();
   for (const e of filtered.slice(-600)) {
     const row = document.createElement("div");
-    const content = e.decoded ?? e.text;
-    row.className = `log-row ${e.direction}${/\b(error|fatal|panic|oops)\b/i.test(content) ? " error" : /\b(warn|timeout)\b/i.test(content) ? " warning" : ""}`;
+    row.className = `log-row ${e.direction} ${e.direction === "rx" && !hexMode ? severity(e.content) : "normal"}`;
+    const source =
+      e.direction === "system"
+        ? labels[e.source] || e.source
+        : e.direction === "rx"
+          ? "RX / 设备"
+          : `TX / ${labels[e.source] || e.source}`;
     for (const [cls, text] of [
       ["seq", String(e.seq)],
       ["time", time(e.time)],
-      [
-        "origin",
-        e.direction === "system"
-          ? labels[e.source] || e.source
-          : e.direction === "rx"
-            ? "RX / 设备"
-            : `TX / ${labels[e.source] || e.source}`,
-      ],
-      [
-        "payload",
-        select("display").value === "hex" &&
-        e.direction !== "system" &&
-        e.base64
-          ? Array.from(raw(e), (n) => n.toString(16).padStart(2, "0")).join(" ")
-          : stripAnsi(content)
-              .replace(/\r\n/g, "\n")
-              .replace(/\r/g, "\n")
-              .replace(/\n$/, ""),
-      ],
+      ["origin", source],
     ]) {
       const span = document.createElement("span");
       span.className = cls;
       span.textContent = text;
       row.append(span);
     }
-    row.title = `事件 #${e.seq} · ${e.time}${e.task_id ? ` · 任务 ${e.task_id}` : ""}`;
+    const payload = document.createElement("span");
+    payload.className = "payload";
+    if (hexMode || e.direction !== "rx") payload.textContent = e.content;
+    else
+      for (const part of logParts(e.content, filter)) {
+        if (!part.kind && !part.match)
+          payload.append(document.createTextNode(part.text));
+        else {
+          const token = document.createElement(part.match ? "mark" : "span");
+          token.className = part.kind ? `token-${part.kind}` : "";
+          token.textContent = part.text;
+          payload.append(token);
+        }
+      }
+    row.append(payload);
+    row.title = `事件 #${e.seq}${e.lastSeq !== e.seq ? `–${e.lastSeq}` : ""} · ${e.time}${e.task_id ? ` · 任务 ${e.task_id}` : ""}`;
     fragment.append(row);
   }
   if (!filtered.length) {
@@ -423,7 +435,7 @@ function render() {
   view.replaceChildren(fragment);
   if (bottom && !historyMode) view.scrollTop = view.scrollHeight;
   $("event-count").textContent =
-    `${historyMode ? "历史文件" : "实时窗口"} · ${filtered.length} 条${filtered.length > 600 ? "（显示最近 600 条）" : ""}${windowDropped ? " · 更早内容见历史文件" : ""}`;
+    `${historyMode ? "历史文件" : "实时窗口"} · ${filtered.length} 行${filtered.length > 600 ? "（最近 600 行）" : ""}${windowDropped ? " · 更早内容见历史文件" : ""}`;
 }
 async function loadHistory(reset: boolean) {
   if (!current) return;
@@ -791,3 +803,26 @@ select("encoding").addEventListener("change", () => {
   select("newline").disabled = select("encoding").value !== "utf8";
 });
 void refresh();
+
+// Keep the sidebar tools within the viewport rather than stacking tall sections.
+for (const name of ["send", "tasks", "tools"]) {
+  action(`panel-${name}`, () => {
+    for (const other of ["send", "tasks", "tools"]) {
+      $(`panel-${other}`).classList.toggle("active", name === other);
+      $(`tool-${other}`).classList.toggle("hidden", name !== other);
+    }
+  });
+}
+action("focus-view", () => {
+  const focused = document.body.classList.toggle("focus-mode");
+  button("focus-view").textContent = focused ? "退出专注" : "专注日志";
+  if (terminalMode) requestAnimationFrame(() => fit.fit());
+});
+action("show-sessions", () => {
+  document.body.classList.toggle("sessions-open");
+  document.body.classList.remove("controls-open");
+});
+action("show-controls", () => {
+  document.body.classList.toggle("controls-open");
+  document.body.classList.remove("sessions-open");
+});

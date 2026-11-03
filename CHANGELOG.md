@@ -2,6 +2,8 @@
 
 ## Unreleased — Shared Serial Workbench
 
+- Compact the workbench into a viewport-sized layout with tool tabs and log focus mode; reassemble serial log lines and highlight device modules, counters, timing, warnings and errors without changing raw capture.
+
 - Add an independent serial owner with non-consuming cursor reads, rotating disk logs and a shared task queue.
 - Add an embedded Chinese browser UI, xterm.js terminal, JSON CLI and thin MCP adapter.
 - Preserve legacy direct serial tools and background recording changes.
