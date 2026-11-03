@@ -1,6 +1,10 @@
 # Serial MCP Server
 
-[![Rust](https://img.shields.io/badge/rust-1.74+-orange.svg)](https://rust-lang.org)
+## Shared Serial Workbench
+
+This fork adds a persistent shared serial daemon, embedded browser UI, JSON CLI and MCP adapter. Run `start-workbench.cmd` on Windows, or build and run `cargo run --bin serial-workbench -- serve`. The original direct-access CLI/MCP is retained. See [the workbench guide](docs/WORKBENCH_ZH.md) for architecture, commands, log retention and verification.
+
+[![Rust](https://img.shields.io/badge/rust-1.85+-orange.svg)](https://rust-lang.org)
 [![RMCP](https://img.shields.io/badge/RMCP-0.3.2-blue.svg)](https://github.com/modelcontextprotocol/rust-sdk)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
@@ -43,7 +47,7 @@ AI agents can discover macro support from this README, from the bundled `skills/
 
 ## Requirements
 
-- Rust 1.74 or newer.
+- Rust 1.85 or newer.
 - A serial device or USB-to-serial adapter when running hardware operations.
 - Device drivers and OS permissions for the selected serial port.
 
@@ -205,6 +209,10 @@ Windows example:
 | `read` | Read data from an open connection with timeout handling or a bounded capture window. |
 | `close` | Close an open connection. |
 | `set_control_lines` | Set RTS and/or DTR on an open connection. |
+| `logging_start` | Continuously record raw received bytes to rotating files and a bounded in-memory tail. |
+| `logging_status` | Show statistics and errors for one or all recording sessions. |
+| `logging_tail` | Inspect the newest recorded bytes without consuming them. |
+| `logging_stop` | Stop a recording session, flush its file, and return final statistics. |
 | `macro_load` | Validate and load an inline macro pack or pack file path into the server's in-memory registry. |
 | `macro_list` | List loaded macro packs, macros, and assemblies. |
 | `macro_unload` | Remove a loaded macro pack from the in-memory registry. |
@@ -232,6 +240,36 @@ MCP `read` accepts these optional capture fields in addition to
 When `duration_ms` is absent, MCP `read` keeps the existing single-read
 behavior. When `duration_ms` is present, the tool returns structured JSON text
 with `completion_reason`, `waited_ms`, `elapsed_ms`, and `chunks`.
+
+### Background serial logging
+
+Use `logging_start` after `open` when output must be collected for minutes or
+hours without repeatedly returning it to the MCP client:
+
+```json
+{
+  "connection_id": "...",
+  "path": "C:\\captures\\device.log",
+  "max_file_size_bytes": 10485760,
+  "max_files": 5,
+  "ring_buffer_bytes": 262144
+}
+```
+
+The active file is the requested `path`; older files are rotated to `.1`,
+`.2`, and so on. The session registry and in-memory tail are runtime-only, but
+the log files remain after the MCP server exits. `logging_tail` can return the
+newest bytes as `utf8`, `hex`, or `base64` without reading the files.
+
+A recording session owns the serial read direction. While it is active,
+ordinary MCP `read` and real-hardware macro runs are rejected so two consumers
+cannot split or lose incoming bytes. MCP `write` remains available, and replies
+are captured by the recorder. `close` and server shutdown stop and flush the
+recorder first.
+
+Raw serial logs can contain console passwords, Wi-Fi keys, FTP credentials,
+tokens, and other secrets. Store them in a restricted directory, avoid sharing
+them unchanged, and redact sensitive values before attaching them to reports.
 
 ## Agent Skill
 

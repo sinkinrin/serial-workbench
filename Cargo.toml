@@ -2,7 +2,7 @@
 name = "serial-mcp-server"
 version = "0.3.0"
 edition = "2021"
-rust-version = "1.74"
+rust-version = "1.85"
 authors = ["adancurusul <adancurusul@gmail.com>"]
 description = "An MCP server and scriptable CLI for serial port communication"
 license = "MIT"
@@ -24,6 +24,10 @@ tokio-serial = "5.4"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 schemars = { version = "1.0", features = ["derive"] }
+
+# Shared workbench HTTP / WebSocket transport
+axum = { version = "0.8", features = ["ws"] }
+reqwest = { version = "0.12", default-features = false, features = ["json"] }
 
 # Error handling
 anyhow = "1.0"
@@ -62,3 +66,7 @@ path = "src/main.rs"
 [lib]
 name = "serial_mcp_server"
 path = "src/lib.rs"
+
+[[bin]]
+name = "serial-workbench"
+path = "src/bin/serial-workbench.rs"

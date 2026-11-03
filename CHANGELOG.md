@@ -1,9 +1,20 @@
 # Changelog
 
+## Unreleased — Shared Serial Workbench
+
+- Add an independent serial owner with non-consuming cursor reads, rotating disk logs and a shared task queue.
+- Add an embedded Chinese browser UI, xterm.js terminal, JSON CLI and thin MCP adapter.
+- Preserve legacy direct serial tools and background recording changes.
+- Add simulated-device integration tests; no physical-port behavior is claimed as verified.
+
 ## Unreleased
 
 ### Added
 
+- Added MCP background serial logging with `logging_start`, `logging_status`,
+  `logging_tail`, and `logging_stop`.
+- Added size-based log rotation, bounded in-memory tails, recording statistics,
+  and automatic flush-on-close/shutdown behavior.
 - Added bounded capture windows for CLI `read`, CLI `write --read`, and MCP
   `read` using `duration_ms`, `start_trigger`, `initial_timeout_ms`, and
   `idle_timeout_ms`.
@@ -12,6 +23,9 @@
 
 ### Changed
 
+- Background recording now owns a connection's read direction. Ordinary MCP
+  reads and real-hardware macro runs are rejected until recording stops, while
+  writes remain available.
 - Preserved existing single-read behavior when `duration_ms` is not supplied.
 
 ## 0.3.0 - 2026-06-24

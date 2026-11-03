@@ -79,6 +79,72 @@ fn default_max_bytes() -> usize {
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
+pub struct LoggingStartArgs {
+    pub connection_id: String,
+    pub path: String,
+    #[serde(default = "default_logging_max_file_size_bytes")]
+    pub max_file_size_bytes: u64,
+    #[serde(default = "default_logging_max_files")]
+    pub max_files: usize,
+    #[serde(default = "default_logging_read_chunk_size")]
+    pub read_chunk_size: usize,
+    #[serde(default = "default_logging_read_timeout_ms")]
+    pub read_timeout_ms: u64,
+    #[serde(default = "default_logging_ring_buffer_bytes")]
+    pub ring_buffer_bytes: usize,
+    #[serde(default = "default_logging_flush_interval_ms")]
+    pub flush_interval_ms: u64,
+}
+
+fn default_logging_max_file_size_bytes() -> u64 {
+    10 * 1024 * 1024
+}
+
+fn default_logging_max_files() -> usize {
+    5
+}
+
+fn default_logging_read_chunk_size() -> usize {
+    4096
+}
+
+fn default_logging_read_timeout_ms() -> u64 {
+    200
+}
+
+fn default_logging_ring_buffer_bytes() -> usize {
+    256 * 1024
+}
+
+fn default_logging_flush_interval_ms() -> u64 {
+    1000
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct LoggingStopArgs {
+    pub connection_id: String,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct LoggingStatusArgs {
+    #[serde(default)]
+    pub connection_id: Option<String>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct LoggingTailArgs {
+    pub connection_id: String,
+    #[serde(default = "default_logging_tail_max_bytes")]
+    pub max_bytes: usize,
+    #[serde(default = "default_encoding")]
+    pub encoding: String,
+}
+
+fn default_logging_tail_max_bytes() -> usize {
+    8192
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
 pub struct SetControlLinesArgs {
     pub connection_id: String,
     #[serde(default)]
@@ -243,6 +309,15 @@ pub struct ReadResponse {
     pub completion_reason: Option<CaptureCompletionReason>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub chunks: Option<Vec<CaptureChunk>>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct LoggingTailResponse {
+    pub connection_id: String,
+    pub bytes_returned: usize,
+    pub buffered_bytes: usize,
+    pub data: String,
+    pub encoding: String,
 }
 
 #[derive(Debug, Serialize)]

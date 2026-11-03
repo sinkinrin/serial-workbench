@@ -8,14 +8,17 @@ pub mod automation;
 pub mod cli;
 pub mod config;
 pub mod error;
+pub mod recording;
 pub mod serial;
 pub mod session;
 pub mod tools;
 pub mod utils;
+pub mod workbench;
 
 // Re-export main types for convenience
 pub use config::{Args, Config};
 pub use error::{Result, SerialError};
+pub use recording::{RecordingManager, RecordingOptions, RecordingStatus, RecordingTail};
 pub use serial::{ConnectionManager, PortInfo, SerialConnection};
 pub use session::{SerialSession, SessionManager, SessionState};
 pub use tools::SerialHandler;

@@ -1,0 +1,332 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <meta name="color-scheme" content="light" />
+    <title>Serial Workbench · 串口工作台</title>
+    <link rel="stylesheet" href="/style.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="brand">
+        <span class="brand-icon">⌁</span>
+        <div><strong>Serial Workbench</strong><span>串口工作台</span></div>
+      </div>
+      <div class="top-status">
+        <span class="status-dot" id="service-dot"></span
+        ><span id="service-status">正在连接后台</span
+        ><span class="separator"></span
+        ><span class="local-label">LOCAL WORKSPACE</span>
+      </div>
+      <button class="button primary" id="new-session">＋ 新建连接</button>
+    </header>
+    <div class="workspace">
+      <aside class="sidebar">
+        <div class="sidebar-heading">
+          <span>设备与会话</span
+          ><button
+            class="icon-button"
+            id="refresh"
+            title="刷新会话"
+            aria-label="刷新会话"
+          >
+            ↻
+          </button>
+        </div>
+        <div id="sessions" class="sessions"></div>
+        <div class="sidebar-bottom">
+          <button class="button demo-button" id="demo">◈ 打开模拟设备</button>
+          <p>先试试界面和协作流程<br />无需连接任何硬件</p>
+          <div class="sidebar-foot">一个连接 · 多方共享</div>
+        </div>
+      </aside>
+      <main class="main-panel">
+        <section class="session-header">
+          <div>
+            <div class="eyebrow" id="session-eyebrow">SERIAL WORKSPACE</div>
+            <h1 id="session-name">准备好开始调试</h1>
+            <p id="session-config">连接一个设备，或打开模拟设备体验工作台。</p>
+          </div>
+          <div class="session-actions">
+            <span class="pill" id="session-state">未选择会话</span
+            ><button class="button danger subtle" id="disconnect" disabled>
+              断开连接
+            </button>
+          </div>
+        </section>
+        <section class="metrics">
+          <div><span>接收 RX</span><strong id="rx-total">—</strong></div>
+          <div><span>发送 TX</span><strong id="tx-total">—</strong></div>
+          <div><span>最近收到</span><strong id="last-received">—</strong></div>
+          <div><span>当前任务</span><strong id="active-task">空闲</strong></div>
+        </section>
+        <section class="viewer">
+          <div class="viewer-toolbar">
+            <div class="tabs">
+              <button class="tab active" id="log-tab">日志流</button
+              ><button class="tab" id="terminal-tab">交互终端</button>
+            </div>
+            <div class="viewer-actions">
+              <span class="live-badge" id="stream-state">等待连接</span
+              ><button
+                class="icon-button"
+                id="pause"
+                title="暂停显示，采集继续"
+                aria-label="暂停显示"
+              >
+                Ⅱ</button
+              ><button class="button small" id="export" disabled>
+                ↓ 导出日志
+              </button>
+            </div>
+          </div>
+          <div class="filter-bar" id="filter-bar">
+            <div class="search-wrap">
+              <span>⌕</span
+              ><input
+                id="filter"
+                type="search"
+                placeholder="搜索当前日志内容…"
+                aria-label="搜索日志"
+              />
+            </div>
+            <select id="direction" aria-label="日志方向">
+              <option value="all">全部事件</option>
+              <option value="rx">设备输出 RX</option>
+              <option value="tx">发送记录 TX</option>
+              <option value="system">操作记录</option></select
+            ><select id="display" aria-label="显示编码">
+              <option value="text">文本</option>
+              <option value="hex">HEX</option></select
+            ><button class="button small" id="history-search">
+              查历史文件
+            </button>
+          </div>
+          <div class="notice hidden" id="notice"></div>
+          <div class="log-head">
+            <span>序号</span><span>接收时间</span><span>来源</span
+            ><span>内容</span>
+          </div>
+          <div id="log-view" class="log-view">
+            <div class="empty-state">
+              <span class="empty-icon">⌁</span>
+              <h2>让日志始终在场</h2>
+              <p>
+                你看实时日志，AI 查询同一份记录。<br />关闭页面，后台仍会继续采集。
+              </p>
+              <button class="button primary" id="empty-demo">
+                体验模拟设备
+              </button>
+            </div>
+          </div>
+          <div id="terminal-view" class="terminal-view hidden">
+            <div class="terminal-options">
+              <label
+                ><input type="checkbox" id="direct-input" />
+                允许键盘直接发送</label
+              ><span>输入会进入共享发送队列</span
+              ><button class="button small" id="ctrl-c">发送 Ctrl+C</button>
+            </div>
+            <div id="terminal"></div>
+          </div>
+          <div class="viewer-footer">
+            <span id="event-count">尚无日志</span
+            ><button id="load-more" class="text-button hidden">
+              继续加载历史</button
+            ><button id="return-live" class="text-button hidden">
+              返回实时日志 →</button
+            ><span id="capture-status">采集由后台独立运行</span>
+          </div>
+        </section>
+        <div class="storage-row">
+          <span class="storage-icon">▤</span
+          ><span id="storage-path">每个会话独立保存原始日志和操作记录</span
+          ><button class="text-button" id="copy-path" disabled>复制路径</button>
+        </div>
+      </main>
+      <aside class="inspector">
+        <section class="command-section">
+          <div class="section-title">
+            <h2>发送命令</h2>
+            <span class="tiny-tag">HUMAN</span>
+          </div>
+          <p class="section-desc">所有操作共享同一连接，并记录来源。</p>
+          <form id="send-form">
+            <textarea
+              id="command"
+              rows="4"
+              placeholder="输入命令，例如 uptime"
+              aria-label="发送内容"
+              spellcheck="false"
+            ></textarea>
+            <div class="form-row">
+              <select id="encoding" aria-label="发送编码">
+                <option value="utf8">UTF-8</option>
+                <option value="hex">HEX</option>
+                <option value="base64">Base64</option></select
+              ><select id="newline" aria-label="行尾">
+                <option value="crlf">CRLF</option>
+                <option value="lf">LF</option>
+                <option value="cr">CR</option>
+                <option value="none">无行尾</option>
+              </select>
+            </div>
+            <details class="send-options">
+              <summary>响应等待与输入保护</summary>
+              <label
+                >等待出现的文本<input
+                  id="wait-for"
+                  placeholder="留空则仅发送" /></label
+              ><label
+                >超时（毫秒）<input
+                  id="timeout"
+                  type="number"
+                  value="5000"
+                  min="1"
+                  max="300000" /></label
+              ><label class="checkbox-label"
+                ><input id="sensitive" type="checkbox" /> 隐藏发送内容</label
+              >
+              <p class="hint">只隐藏发送记录；设备回显仍会被采集。</p>
+            </details>
+            <button class="button primary send-button" id="send" disabled>
+              发送命令 <span>↗</span>
+            </button>
+          </form>
+          <button class="button takeover" id="takeover" disabled>
+            接管 · 取消待执行任务
+          </button>
+          <p class="hint">取消只停止后台流程，不会向设备发送中断。</p>
+        </section>
+        <section class="tasks-section">
+          <div class="section-title">
+            <h2>协作记录</h2>
+            <span class="count-tag" id="task-count">0</span>
+          </div>
+          <div id="tasks">
+            <p class="muted empty-tasks">你、CLI 和 AI 的任务会显示在这里。</p>
+          </div>
+        </section>
+        <section class="macro-section">
+          <details>
+            <summary>运行自动化宏</summary>
+            <p class="hint">沿用 JSON 宏格式，执行时日志采集继续。</p>
+            <input
+              id="macro-file"
+              type="file"
+              accept=".json,application/json"
+              aria-label="选择宏文件"
+            /><select id="macro-name" aria-label="选择宏" disabled></select
+            ><button class="button" id="run-macro" disabled>运行宏</button>
+          </details>
+        </section>
+        <section class="control-section">
+          <details>
+            <summary>RTS / DTR 控制线</summary>
+            <div class="form-row">
+              <label
+                >RTS<select id="rts">
+                  <option value="">保持</option>
+                  <option value="true">高</option>
+                  <option value="false">低</option>
+                </select></label
+              ><label
+                >DTR<select id="dtr">
+                  <option value="">保持</option>
+                  <option value="true">高</option>
+                  <option value="false">低</option>
+                </select></label
+              >
+            </div>
+            <p class="hint">电平变化可能触发设备复位。</p>
+            <button class="button" id="set-control" disabled>应用电平</button>
+          </details>
+        </section>
+      </aside>
+    </div>
+    <dialog id="connect-dialog">
+      <form id="connect-form">
+        <div class="dialog-header">
+          <div>
+            <div class="eyebrow">NEW CONNECTION</div>
+            <h2>连接你的设备</h2>
+          </div>
+          <button
+            type="button"
+            class="icon-button"
+            id="close-dialog"
+            aria-label="关闭"
+          >
+            ×
+          </button>
+        </div>
+        <label
+          >串口
+          <div class="port-row">
+            <input
+              id="port"
+              list="port-options"
+              placeholder="例如 COM5"
+              required
+            /><datalist id="port-options"></datalist
+            ><button type="button" class="button" id="refresh-ports">
+              刷新
+            </button>
+          </div></label
+        ><label
+          >波特率<select id="baud">
+            <option>115200</option>
+            <option>9600</option>
+            <option>19200</option>
+            <option>38400</option>
+            <option>57600</option>
+            <option>230400</option>
+            <option>460800</option>
+            <option>921600</option>
+          </select></label
+        >
+        <div class="form-row">
+          <label
+            >数据位<select id="data-bits">
+              <option>8</option>
+              <option>7</option>
+              <option>6</option>
+              <option>5</option>
+            </select></label
+          ><label
+            >停止位<select id="stop-bits">
+              <option>1</option>
+              <option>2</option>
+            </select></label
+          >
+        </div>
+        <div class="form-row">
+          <label
+            >校验<select id="parity">
+              <option value="none">无</option>
+              <option value="even">偶校验</option>
+              <option value="odd">奇校验</option>
+            </select></label
+          ><label
+            >流控<select id="flow-control">
+              <option value="none">无</option>
+              <option value="hardware">硬件</option>
+              <option value="software">软件</option>
+            </select></label
+          >
+        </div>
+        <p class="hint">连接后自动采集。其他界面和 AI 可以加入这个会话。</p>
+        <button
+          class="button primary send-button"
+          type="submit"
+          id="connect-submit"
+        >
+          连接并开始采集
+        </button>
+      </form>
+    </dialog>
+    <div id="toast" role="status" class="toast hidden"></div>
+    <script type="module" src="/app.js"></script>
+  </body>
+</html>

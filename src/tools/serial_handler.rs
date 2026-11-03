@@ -10,6 +10,7 @@ use rmcp::{
 };
 use serde::Serialize;
 use std::future::Future;
+use std::path::PathBuf;
 use std::sync::Arc;
 use tracing::{debug, error, info};
 
@@ -19,12 +20,16 @@ use crate::automation::{
     SerialMacroTransport, SimulatedMacroTransport,
 };
 use crate::config::Config;
+use crate::recording::{RecordingManager, RecordingOptions};
 use crate::serial::{CaptureConfig, ConnectionManager, PortInfo};
+
+const RECORDING_READ_CONFLICT: &str = "Background logging is active for this connection. Use logging_tail to inspect recent data or logging_stop before calling read/macro tools.";
 
 /// Serial tool handler using rust-sdk standard patterns
 #[derive(Clone)]
 pub struct SerialHandler {
     connection_manager: Arc<ConnectionManager>,
+    recording_manager: Arc<RecordingManager>,
     macro_registry: Arc<MacroRegistry>,
     #[allow(dead_code)]
     config: Config,
@@ -36,6 +41,7 @@ impl SerialHandler {
     pub fn new(config: Config) -> Self {
         Self {
             connection_manager: Arc::new(ConnectionManager::new()),
+            recording_manager: Arc::new(RecordingManager::new()),
             macro_registry: Arc::new(MacroRegistry::default()),
             config,
             tool_router: Self::tool_router(),
@@ -45,6 +51,11 @@ impl SerialHandler {
     /// Get a reference to the connection manager for shutdown handling
     pub fn connection_manager(&self) -> Arc<ConnectionManager> {
         Arc::clone(&self.connection_manager)
+    }
+
+    /// Get a reference to the recording manager for shutdown handling.
+    pub fn recording_manager(&self) -> Arc<RecordingManager> {
+        Arc::clone(&self.recording_manager)
     }
 
     pub async fn macro_load_pack(
@@ -120,6 +131,9 @@ impl SerialHandler {
     ) -> Result<RunReport, McpError> {
         match input {
             MacroRunInput::Connection { connection_id } => {
+                if self.recording_manager.is_active(&connection_id).await {
+                    return Err(mcp_error(RECORDING_READ_CONFLICT));
+                }
                 let connection = self
                     .connection_manager
                     .get(&connection_id)
@@ -269,6 +283,11 @@ impl SerialHandler {
     ) -> Result<CallToolResult, McpError> {
         debug!("Closing serial connection {}", args.connection_id);
 
+        self.recording_manager
+            .stop_if_exists(&args.connection_id)
+            .await
+            .map_err(mcp_error)?;
+
         match self.connection_manager.close(&args.connection_id).await {
             Ok(()) => {
                 info!("Closed serial connection {}", args.connection_id);
@@ -416,6 +435,88 @@ impl SerialHandler {
         )]))
     }
 
+    #[tool(
+        description = "Start background raw serial logging with file rotation and an in-memory tail buffer"
+    )]
+    async fn logging_start(
+        &self,
+        Parameters(args): Parameters<LoggingStartArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        let connection = self
+            .connection_manager
+            .get(&args.connection_id)
+            .await
+            .map_err(mcp_error)?;
+        let options = RecordingOptions {
+            path: PathBuf::from(args.path),
+            max_file_size_bytes: args.max_file_size_bytes,
+            max_files: args.max_files,
+            read_chunk_size: args.read_chunk_size,
+            read_timeout_ms: args.read_timeout_ms,
+            ring_buffer_bytes: args.ring_buffer_bytes,
+            flush_interval_ms: args.flush_interval_ms,
+        };
+        let status = self
+            .recording_manager
+            .start(args.connection_id, connection, options)
+            .await
+            .map_err(mcp_error)?;
+        tool_json(&status)
+    }
+
+    #[tool(
+        description = "Stop background serial logging, flush the file, and return final statistics"
+    )]
+    async fn logging_stop(
+        &self,
+        Parameters(args): Parameters<LoggingStopArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        let status = self
+            .recording_manager
+            .stop(&args.connection_id)
+            .await
+            .map_err(mcp_error)?;
+        tool_json(&status)
+    }
+
+    #[tool(
+        description = "Show background serial logging status for one connection or all active sessions"
+    )]
+    async fn logging_status(
+        &self,
+        Parameters(args): Parameters<LoggingStatusArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        let statuses = self
+            .recording_manager
+            .status(args.connection_id.as_deref())
+            .await
+            .map_err(mcp_error)?;
+        tool_json(&statuses)
+    }
+
+    #[tool(
+        description = "Return the newest bytes from a background serial logging session without consuming them"
+    )]
+    async fn logging_tail(
+        &self,
+        Parameters(args): Parameters<LoggingTailArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        let tail = self
+            .recording_manager
+            .tail(&args.connection_id, args.max_bytes)
+            .await
+            .map_err(mcp_error)?;
+        let data = encode_data(&tail.bytes, &args.encoding).map_err(mcp_error)?;
+        let response = LoggingTailResponse {
+            connection_id: tail.connection_id,
+            bytes_returned: tail.bytes.len(),
+            buffered_bytes: tail.buffered_bytes,
+            data,
+            encoding: args.encoding,
+        };
+        tool_json(&response)
+    }
+
     #[tool(description = "Read data from a serial port connection")]
     async fn read(
         &self,
@@ -425,6 +526,10 @@ impl SerialHandler {
             "Reading from connection {} with timeout {:?}",
             args.connection_id, args.timeout_ms
         );
+
+        if self.recording_manager.is_active(&args.connection_id).await {
+            return Err(mcp_error(RECORDING_READ_CONFLICT));
+        }
 
         // Get connection
         let connection = match self.connection_manager.get(&args.connection_id).await {

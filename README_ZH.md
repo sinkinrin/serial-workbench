@@ -1,6 +1,10 @@
 # 串口 MCP 服务器
 
-[![Rust](https://img.shields.io/badge/rust-1.74+-orange.svg)](https://rust-lang.org)
+## 共享串口工作台
+
+本分支在原项目基础上增加独立后台、浏览器界面、JSON CLI 和共享 MCP 适配器。Windows 可运行 `start-workbench.cmd`，或执行 `cargo run --bin serial-workbench -- serve`。原直接串口模式继续保留；共享模式统一使用 `serial-workbench`。详见[工作台使用说明](docs/WORKBENCH_ZH.md)。
+
+[![Rust](https://img.shields.io/badge/rust-1.85+-orange.svg)](https://rust-lang.org)
 [![RMCP](https://img.shields.io/badge/RMCP-0.3.2-blue.svg)](https://github.com/modelcontextprotocol/rust-sdk)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
@@ -43,7 +47,7 @@ AI agent 可以通过本 README、仓库内置的 `skills/serial-debug` skill、
 
 ## 环境要求
 
-- Rust 1.74 或更新版本。
+- Rust 1.85 或更新版本。
 - 执行硬件操作时需要串口设备或 USB 转串口适配器。
 - 系统需要具备对应串口驱动和端口访问权限。
 
@@ -199,6 +203,10 @@ Windows 示例：
 | `read` | 从已打开连接读取数据，支持单次超时读取或有边界的采集窗口。 |
 | `close` | 关闭已打开连接。 |
 | `set_control_lines` | 设置已打开连接的 RTS 和/或 DTR。 |
+| `logging_start` | 持续把收到的原始字节写入轮转日志，并保留有上限的内存尾部。 |
+| `logging_status` | 查看一个或全部记录会话的统计和错误。 |
+| `logging_tail` | 不消费数据，查看最近记录的字节。 |
+| `logging_stop` | 停止记录、刷新文件并返回最终统计。 |
 | `macro_load` | 验证并把 inline macro pack 或 pack 文件路径加载到服务器内存 registry。 |
 | `macro_list` | 列出已加载的 macro pack、macro 和 assembly。 |
 | `macro_unload` | 从内存 registry 移除已加载的 macro pack。 |
@@ -223,6 +231,26 @@ MCP `read` 除了 `connection_id`、`timeout_ms`、`max_bytes` 和 `encoding`，
 ```
 
 不传 `duration_ms` 时，MCP `read` 保持原有单次读取行为。传入 `duration_ms` 后，工具返回结构化 JSON 文本，包含 `completion_reason`、`waited_ms`、`elapsed_ms` 和 `chunks`。
+
+### 后台串口日志
+
+在 `open` 之后调用 `logging_start`，可以连续采集几分钟或几小时，而不必把大量输出反复返回给 MCP 客户端：
+
+```json
+{
+  "connection_id": "...",
+  "path": "C:\\captures\\device.log",
+  "max_file_size_bytes": 10485760,
+  "max_files": 5,
+  "ring_buffer_bytes": 262144
+}
+```
+
+当前文件使用指定的 `path`，旧文件依次轮转为 `.1`、`.2` 等。记录会话和内存 tail 只存在于本次服务器进程中，但已经写出的日志文件会在 MCP 服务器退出后保留。`logging_tail` 可以用 `utf8`、`hex` 或 `base64` 查看最近字节，不需要读取整个文件。
+
+记录会话会独占串口的读取方向。记录期间，普通 MCP `read` 和真实硬件 macro 会被拒绝，避免两个读取者拆分或漏掉数据；MCP `write` 仍然可用，设备响应会被后台记录。调用 `close` 或服务器退出时，会先停止并刷新记录。
+
+原始串口日志可能包含控制台密码、Wi-Fi 密钥、FTP 凭据、token 等秘密。请将日志保存到访问受限的目录，不要直接公开分享，并在附加到问题报告前脱敏。
 
 ## Agent Skill
 

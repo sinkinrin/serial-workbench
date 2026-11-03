@@ -1,4 +1,7 @@
-use super::types::{decode_data, encode_data, ReadArgs, SetControlLinesArgs};
+use super::types::{
+    decode_data, encode_data, LoggingStartArgs, LoggingStatusArgs, LoggingTailArgs, ReadArgs,
+    SetControlLinesArgs,
+};
 use crate::serial::CaptureStartTrigger;
 
 #[test]
@@ -168,4 +171,30 @@ fn test_read_args_default_start_trigger_is_first_byte() {
     assert_eq!(args.max_bytes, 1024);
     assert_eq!(args.start_trigger, CaptureStartTrigger::FirstByte);
     assert_eq!(args.duration_ms, None);
+}
+
+#[test]
+fn test_logging_start_args_defaults() {
+    let args: LoggingStartArgs =
+        serde_json::from_str(r#"{"connection_id":"conn-1","path":"capture/serial.log"}"#).unwrap();
+
+    assert_eq!(args.connection_id, "conn-1");
+    assert_eq!(args.path, "capture/serial.log");
+    assert_eq!(args.max_file_size_bytes, 10 * 1024 * 1024);
+    assert_eq!(args.max_files, 5);
+    assert_eq!(args.read_chunk_size, 4096);
+    assert_eq!(args.read_timeout_ms, 200);
+    assert_eq!(args.ring_buffer_bytes, 256 * 1024);
+    assert_eq!(args.flush_interval_ms, 1000);
+}
+
+#[test]
+fn test_logging_status_and_tail_args_defaults() {
+    let status: LoggingStatusArgs = serde_json::from_str(r#"{}"#).unwrap();
+    assert_eq!(status.connection_id, None);
+
+    let tail: LoggingTailArgs = serde_json::from_str(r#"{"connection_id":"conn-1"}"#).unwrap();
+    assert_eq!(tail.connection_id, "conn-1");
+    assert_eq!(tail.max_bytes, 8192);
+    assert_eq!(tail.encoding, "utf8");
 }

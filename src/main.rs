@@ -99,6 +99,7 @@ async fn run_server(config: Config) -> Result<()> {
     // Create handler and get reference to connection manager for cleanup
     let handler = SerialHandler::new(config.clone());
     let connection_manager = handler.connection_manager();
+    let recording_manager = handler.recording_manager();
 
     // Create and serve the handler using rust-sdk standard pattern
     let service = handler.serve(stdio()).await.map_err(|e| {
@@ -121,8 +122,12 @@ async fn run_server(config: Config) -> Result<()> {
         }
     }
 
-    // Cleanup: close all open connections
+    // Cleanup: stop recorders first so buffered data is flushed before ports close.
     info!("Cleaning up resources...");
+    let recordings = recording_manager.stop_all().await;
+    if !recordings.is_empty() {
+        info!("Stopped {} recording session(s)", recordings.len());
+    }
     let closed = connection_manager.close_all().await;
     if closed > 0 {
         info!("Closed {} open connection(s)", closed);
