@@ -12,6 +12,9 @@ use std::path::PathBuf;
 struct Cli {
     #[arg(long, global = true, default_value = "http://127.0.0.1:8765")]
     url: String,
+    /// Include saved steps and bounded receive-window details for a returned task.
+    #[arg(long, global = true)]
+    details: bool,
     #[command(subcommand)]
     command: Command,
 }
@@ -72,7 +75,13 @@ enum Command {
         #[arg(long)]
         wait: bool,
     },
-    Tasks,
+    Tasks {
+        #[arg(long)]
+        session: Option<String>,
+    },
+    /// Shared scripts used by GUI, CLI and MCP.
+    #[command(subcommand)]
+    Scripts(ScriptCommand),
     Task {
         id: String,
         #[arg(long)]
@@ -99,6 +108,30 @@ enum Command {
         rts: Option<bool>,
         #[arg(long)]
         dtr: Option<bool>,
+    },
+}
+#[derive(Subcommand)]
+enum ScriptCommand {
+    List,
+    Show {
+        id: String,
+    },
+    /// Save a JSON script; use the revision from Show when editing.
+    Save {
+        file: PathBuf,
+    },
+    Delete {
+        id: String,
+        #[arg(long)]
+        revision: u64,
+    },
+    Run {
+        id: String,
+        session: String,
+        #[arg(long)]
+        revision: Option<u64>,
+        #[arg(long)]
+        wait: bool,
     },
 }
 #[derive(Args)]
@@ -172,7 +205,14 @@ async fn run() -> Result<()> {
             let pack:Value=serde_json::from_slice(&tokio::fs::read(file).await?)?; wait=w;
             client.post(&format!("/api/sessions/{}/macro",session_id(&session)?),json!({"pack":pack,"name":name,"assembly":assembly,"source":"cli"})).await?
         }
-        Command::Tasks=>client.get("/api/tasks").await?,
+        Command::Tasks{session}=>client.get(&session.map(|id|session_id(&id).map(|id|format!("/api/tasks?session_id={id}"))).transpose()?.unwrap_or("/api/tasks".into())).await?,
+        Command::Scripts(command)=>match command {
+            ScriptCommand::List=>client.get("/api/scripts").await?,
+            ScriptCommand::Show{id}=>client.get(&format!("/api/scripts/{}",session_id(&id)?)).await?,
+            ScriptCommand::Save{file}=>{let mut script:Value=serde_json::from_slice(&tokio::fs::read(file).await?)?;script.as_object_mut().ok_or_else(||anyhow::anyhow!("script must be a JSON object"))?.insert("source".into(),json!("cli"));client.post("/api/scripts",script).await?},
+            ScriptCommand::Delete{id,revision}=>client.post(&format!("/api/scripts/{}/delete",session_id(&id)?),json!({"revision":revision})).await?,
+            ScriptCommand::Run{id,session,revision,wait:w}=>{wait=w;client.post(&format!("/api/scripts/{}/run",session_id(&id)?),json!({"session_id":session_id(&session)?,"source":"cli","revision":revision})).await?},
+        },
         Command::Task{id,wait:w}=>{wait=w;client.get(&format!("/api/tasks/{}",session_id(&id)?)).await?}
         Command::Cancel{id}=>client.post(&format!("/api/tasks/{}/cancel",session_id(&id)?),json!({})).await?,
         Command::Takeover{session}=>client.post(&format!("/api/sessions/{}/takeover",session_id(&session)?),json!({})).await?,
@@ -186,6 +226,18 @@ async fn run() -> Result<()> {
                 value["id"]
                     .as_str()
                     .ok_or_else(|| anyhow::anyhow!("missing task id"))?,
+            )
+            .await?
+    } else {
+        value
+    };
+    let value = if cli.details && value["status"].is_string() && value["session_id"].is_string() {
+        client
+            .task_details(
+                value["id"]
+                    .as_str()
+                    .ok_or_else(|| anyhow::anyhow!("missing task id"))?,
+                wait,
             )
             .await?
     } else {

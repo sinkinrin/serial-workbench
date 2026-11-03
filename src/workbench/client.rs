@@ -57,6 +57,20 @@ impl WorkbenchClient {
     pub async fn post(&self, path: &str, body: Value) -> Result<Value> {
         self.request(Method::POST, path, Some(body)).await
     }
+    pub async fn task_details(&self, id: &str, settle: bool) -> Result<Value> {
+        let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(3);
+        loop {
+            let record = self.get(&format!("/api/tasks/{id}/details")).await?;
+            if !settle
+                || record["transcript"]["finalized"] == true
+                || tokio::time::Instant::now() >= deadline
+            {
+                return Ok(record);
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        }
+    }
+
     pub async fn wait_task(&self, id: &str) -> Result<Value> {
         loop {
             let task = self.get(&format!("/api/tasks/{id}")).await?;

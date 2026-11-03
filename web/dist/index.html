@@ -232,12 +232,18 @@
           </button>
           <div id="script-list" class="script-list"></div>
           <p class="hint">
-            保存在当前浏览器，所有会话共用。保存不会执行，点击“运行”才会发送。
+            <span id="script-storage-status"
+              >保存在共享后台，网页、CLI 和 AI 共用。保存不会执行。</span
+            >
           </p>
         </section>
         <section class="tasks-section tool-panel hidden" id="tool-tasks">
           <div class="section-title">
             <h2>协作记录</h2>
+            <select id="task-scope" aria-label="任务范围">
+              <option value="all">全部会话</option>
+              <option value="session">当前会话</option>
+            </select>
           </div>
           <div id="tasks">
             <p class="muted empty-tasks">你、CLI 和 AI 的任务会显示在这里。</p>
@@ -307,6 +313,45 @@
         </div>
       </aside>
     </div>
+    <dialog id="task-dialog" class="task-dialog">
+      <div class="dialog-header">
+        <div>
+          <div class="eyebrow">EXECUTION DETAILS</div>
+          <h2 id="task-detail-title">任务详情</h2>
+        </div>
+        <button
+          class="icon-button"
+          id="close-task-dialog"
+          aria-label="关闭任务详情"
+        >
+          ×
+        </button>
+      </div>
+      <p id="task-detail-meta" class="task-detail-meta"></p>
+      <p id="task-detail-reference" class="task-detail-reference"></p>
+      <div id="task-detail-notice" class="notice hidden"></div>
+      <div class="task-detail-columns">
+        <section>
+          <h3>计划步骤</h3>
+          <div id="task-plan"></div>
+        </section>
+        <section class="task-output-section">
+          <h3>实际收发 <span id="task-detail-stats"></span></h3>
+          <p class="hint">
+            接收窗口可能包含设备后台日志；纯发送任务附带最多 1
+            秒的后续接收内容。
+          </p>
+          <div id="task-transcript"></div>
+        </section>
+      </div>
+      <div class="task-detail-actions">
+        <button class="button small" id="refresh-task-detail">刷新详情</button
+        ><button class="button small" id="copy-task-detail">复制详情</button
+        ><button class="button small danger" id="cancel-detail-task">
+          取消任务
+        </button>
+      </div>
+    </dialog>
     <dialog id="script-dialog" class="script-dialog">
       <form id="script-form">
         <div class="dialog-header">
@@ -386,7 +431,9 @@
         <div class="script-dialog-actions">
           <button class="button" type="button" id="cancel-script-editor">
             取消</button
-          ><button class="button primary" type="submit">保存脚本</button>
+          ><button class="button primary" type="submit" id="save-shared-script">
+            保存脚本
+          </button>
         </div>
       </form>
     </dialog>

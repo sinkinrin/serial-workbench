@@ -23,6 +23,35 @@ pub struct TaskId {
     pub task_id: String,
 }
 #[derive(Deserialize, JsonSchema)]
+pub struct TaskDetailsArgs {
+    pub task_id: String,
+    #[serde(default = "yes")]
+    pub details: bool,
+}
+fn yes() -> bool {
+    true
+}
+#[derive(Deserialize, JsonSchema)]
+pub struct ScriptId {
+    pub script_id: String,
+}
+#[derive(Deserialize, JsonSchema)]
+pub struct ScriptSave {
+    pub script: Value,
+}
+#[derive(Deserialize, JsonSchema)]
+pub struct ScriptDelete {
+    pub script_id: String,
+    pub revision: u64,
+}
+#[derive(Deserialize, JsonSchema)]
+pub struct ScriptRun {
+    pub script_id: String,
+    pub session_id: String,
+    #[serde(default)]
+    pub revision: Option<u64>,
+}
+#[derive(Deserialize, JsonSchema)]
 pub struct Open {
     pub port: String,
     #[serde(default = "baud")]
@@ -159,18 +188,18 @@ impl WorkbenchMcp {
         result(self.client.post(&format!("/api/sessions/{}/send",id(&a.session_id)?),json!({"data":a.data,"encoding":a.encoding.unwrap_or("utf8".into()),"source":"mcp","wait_for":a.wait_for,"timeout_ms":a.timeout_ms.unwrap_or(5000),"sensitive":a.sensitive})).await.map_err(error)?)
     }
     #[tool(
-        description = "Get task status and event range. sent only confirms transmission; succeeded means configured expectations matched; completed means a macro finished without response expectations. failed/cancelled must not be treated as success."
+        description = "Get persisted task status, exact planned commands and a bounded RX/TX window by default (details=false gives status only). Unsolicited logs may be present; truncated/gap/finalized flags describe coverage. Sensitive input and its transcript are hidden. sent only confirms transmission; succeeded means configured expectations matched; completed means a macro finished without response expectations. failed/cancelled must not be treated as success."
     )]
     async fn serial_task(
         &self,
-        Parameters(a): Parameters<TaskId>,
+        Parameters(a): Parameters<TaskDetailsArgs>,
     ) -> Result<CallToolResult, McpError> {
-        result(
-            self.client
-                .get(&format!("/api/tasks/{}", id(&a.task_id)?))
-                .await
-                .map_err(error)?,
-        )
+        let path = format!(
+            "/api/tasks/{}{}",
+            id(&a.task_id)?,
+            if a.details { "/details" } else { "" }
+        );
+        result(self.client.get(&path).await.map_err(error)?)
     }
     #[tool(
         description = "Cancel queued/running host task. Already transmitted bytes cannot be recalled. Does not send Ctrl-C or stop a program running on the device."
@@ -215,6 +244,76 @@ impl WorkbenchMcp {
                 .post(
                     &format!("/api/sessions/{}/control", id(&a.session_id)?),
                     json!({"rts":a.rts,"dtr":a.dtr,"source":"mcp"}),
+                )
+                .await
+                .map_err(error)?,
+        )
+    }
+    #[tool(
+        description = "List shared saved command scripts, including IDs and revisions. These are the same scripts shown in the GUI and persisted in scripts.json."
+    )]
+    async fn serial_scripts(&self) -> Result<CallToolResult, McpError> {
+        result(self.client.get("/api/scripts").await.map_err(error)?)
+    }
+    #[tool(description = "Read a shared script before running or editing it.")]
+    async fn serial_script_get(
+        &self,
+        Parameters(a): Parameters<ScriptId>,
+    ) -> Result<CallToolResult, McpError> {
+        result(
+            self.client
+                .get(&format!("/api/scripts/{}", id(&a.script_id)?))
+                .await
+                .map_err(error)?,
+        )
+    }
+    #[tool(
+        description = "Create or update a shared script without executing it. script is JSON with name, commands (one command per line), optional id, revision, newline, intervalMs, waitFor, timeoutMs. Editing requires the latest revision. GUI and CLI see the same saved record."
+    )]
+    async fn serial_script_save(
+        &self,
+        Parameters(mut a): Parameters<ScriptSave>,
+    ) -> Result<CallToolResult, McpError> {
+        a.script
+            .as_object_mut()
+            .ok_or_else(|| error("script must be a JSON object"))?
+            .insert("source".into(), json!("mcp"));
+        result(
+            self.client
+                .post("/api/scripts", a.script)
+                .await
+                .map_err(error)?,
+        )
+    }
+    #[tool(
+        description = "Delete a saved shared script using its latest revision. Does not cancel an already queued execution snapshot."
+    )]
+    async fn serial_script_delete(
+        &self,
+        Parameters(a): Parameters<ScriptDelete>,
+    ) -> Result<CallToolResult, McpError> {
+        result(
+            self.client
+                .post(
+                    &format!("/api/scripts/{}/delete", id(&a.script_id)?),
+                    json!({"revision":a.revision}),
+                )
+                .await
+                .map_err(error)?,
+        )
+    }
+    #[tool(
+        description = "Run a previously reviewed shared script against an existing session. Pass revision to ensure it has not changed. Returns task ID; serial_task includes commands and received bytes. This sends real device commands, so only run operations authorized by the user."
+    )]
+    async fn serial_script_run(
+        &self,
+        Parameters(a): Parameters<ScriptRun>,
+    ) -> Result<CallToolResult, McpError> {
+        result(
+            self.client
+                .post(
+                    &format!("/api/scripts/{}/run", id(&a.script_id)?),
+                    json!({"session_id":id(&a.session_id)?,"source":"mcp","revision":a.revision}),
                 )
                 .await
                 .map_err(error)?,

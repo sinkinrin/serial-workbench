@@ -23,6 +23,8 @@ pub struct Hub {
     pub data_dir: PathBuf,
     pub sessions: RwLock<HashMap<String, Arc<Session>>>,
     pub tasks: RwLock<HashMap<String, Arc<Task>>>,
+    pub scripts: Mutex<Vec<super::scripts::SavedScript>>,
+    pub detail_jobs: Mutex<Vec<JoinHandle<()>>>,
     opening: Mutex<()>,
     shutting_down: AtomicBool,
     pub shutdown_requested: Notify,
@@ -96,10 +98,14 @@ impl Hub {
     pub async fn new(data_dir: PathBuf) -> Result<Arc<Self>> {
         fs::create_dir_all(&data_dir).await?;
         let data_dir = fs::canonicalize(data_dir).await?;
+        let scripts = super::scripts::load(&data_dir.join("scripts.json")).await?;
+        let tasks = super::task_history::load_tasks(&data_dir.join("tasks")).await?;
         Ok(Arc::new(Self {
             data_dir,
+            scripts: Mutex::new(scripts),
+            detail_jobs: Mutex::new(Vec::new()),
             sessions: RwLock::new(HashMap::new()),
-            tasks: RwLock::new(HashMap::new()),
+            tasks: RwLock::new(tasks),
             opening: Mutex::new(()),
             shutting_down: AtomicBool::new(false),
             shutdown_requested: Notify::new(),
@@ -276,6 +282,10 @@ impl Hub {
         drop(opening);
         for id in ids {
             let _ = self.close(&id).await;
+        }
+        let jobs = std::mem::take(&mut *self.detail_jobs.lock().await);
+        for job in jobs {
+            let _ = job.await;
         }
     }
 }

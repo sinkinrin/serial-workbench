@@ -2,6 +2,9 @@
 
 ## Unreleased — Shared Serial Workbench
 
+- Show command previews and expandable planned steps / actual TX-RX details; persist task records across daemon restarts and mark unfinished work interrupted without replay.
+- Share saved scripts across GUI, CLI and MCP with revision checks, immutable execution snapshots and one-time migration from browser storage. Add five MCP script tools and CLI `--details`.
+
 - Add named quick scripts: save one or multiple text commands, choose line endings / intervals / optional response waits, and run through the shared macro queue.
 
 - Add editable keyword/color rules with ordering, enable toggles, case matching, live preview and browser-local persistence.
@@ -11,7 +14,7 @@
 - Add an independent serial owner with non-consuming cursor reads, rotating disk logs and a shared task queue.
 - Add an embedded Chinese browser UI, xterm.js terminal, JSON CLI and thin MCP adapter.
 - Preserve legacy direct serial tools and background recording changes.
-- Add simulated-device integration tests; no physical-port behavior is claimed as verified.
+- Add isolated simulator integration tests and verify read-only command batches on a real COM6 CH340 device. USB hotplug and electrical behavior remain unverified.
 
 ## Unreleased
 

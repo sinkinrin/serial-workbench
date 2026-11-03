@@ -189,6 +189,8 @@ pub struct ControlRequest {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TaskInfo {
     pub id: String,
+    #[serde(default)]
+    pub port: String,
     pub session_id: String,
     pub source: String,
     pub label: String,
@@ -198,8 +200,55 @@ pub struct TaskInfo {
     pub start_cursor: u64,
     pub end_cursor: u64,
     pub message: Option<String>,
+    #[serde(default)]
+    pub commands_preview: Vec<String>,
+    #[serde(default)]
+    pub command_count: usize,
+    #[serde(default)]
+    pub sensitive: bool,
 }
 
 pub fn now() -> String {
     chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true)
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ScriptReference {
+    pub id: String,
+    pub revision: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TaskStep {
+    pub kind: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub data: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub encoding: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ms: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub timeout_ms: Option<u64>,
+}
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct TaskTranscript {
+    pub events: Vec<Event>,
+    pub bytes_returned: usize,
+    pub gap: bool,
+    pub truncated: bool,
+    pub finalized: bool,
+    pub hidden: bool,
+    pub next_cursor: u64,
+}
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TaskDetails {
+    #[serde(flatten)]
+    pub info: TaskInfo,
+    pub steps: Vec<TaskStep>,
+    #[serde(default)]
+    pub script: Option<ScriptReference>,
+    #[serde(default)]
+    pub transcript: TaskTranscript,
+    #[serde(default)]
+    pub reconstructed: bool,
 }

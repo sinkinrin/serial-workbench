@@ -41,7 +41,8 @@ $wb = '.\target\release\serial-workbench.exe'
 & $wb events <session-id> --after 0 --limit 100
 & $wb send <session-id> --data uptime --newline crlf --wait
 & $wb send <session-id> --data help --newline crlf --wait-for 'demo>' --timeout-ms 5000 --wait
-& $wb task <task-id> --wait
+& $wb task <task-id> --wait --details
+& $wb tasks --session <session-id>
 & $wb cancel <task-id>
 & $wb events <session-id> --history --contains ERROR
 & $wb macro <session-id> .\pack.json boot --wait
@@ -59,7 +60,8 @@ $wb = '.\target\release\serial-workbench.exe'
 - `cancel` / `takeover` 只取消主机任务，无法撤回已发送字节，也不会自动发送 Ctrl+C。界面有独立“发送 Ctrl+C”按钮。
 - 点击接管或启用终端直接输入后，人持有控制权，CLI/MCP 的新发送会被拒绝；点击“释放控制权”或 `release` 后恢复。页面关闭不会自动释放，以免半条命令被另一方接着写入；重新打开界面可手动释放。
 - 同一会话的任务按提交顺序执行，整个宏占用发送队列；采集、日志查看和历史查询继续运行。
-- `--sensitive` 只隐藏 TX 日志和任务标题，设备回显仍可能含敏感信息；原始 RX 文件需要按实际内容保护。
+- `--details` 返回命令步骤和有界的收发窗口；不需要详情时可只查询状态。
+- `--sensitive` 隐藏 TX 内容、计划中的输入/等待文本及任务详情的整个收发窗口；原始 RX 文件和普通日志视图仍可能含设备回显，需要按实际内容保护。
 
 宏沿用上游 `schema_version: "0.3"` 格式，支持 send / expect / delay 和 assembly。共享模式复用原来的规划、验证及执行器，并把宏读取适配成独立游标，避免从设备抢读。
 
@@ -80,7 +82,9 @@ $wb = '.\target\release\serial-workbench.exe'
 
 以上是通用 MCP 客户端示例，不会自动修改任何已安装客户端的配置。
 
-工具：`serial_ports`、`serial_sessions`、`serial_open`、`serial_events`、`serial_send`、`serial_task`、`serial_cancel`、`serial_macro`、`serial_control`、`serial_close`。
+工具：`serial_ports`、`serial_sessions`、`serial_open`、`serial_events`、`serial_send`、`serial_task`、`serial_cancel`、`serial_macro`、`serial_control`、`serial_close`、`serial_scripts`、`serial_script_get`、`serial_script_save`、`serial_script_delete`、`serial_script_run`，共 15 个。
+
+`serial_task` 默认返回命令和回包详情，传 `details:false` 仅查询状态。`serial_script_save` 接收 `{script:{name,commands,newline,intervalMs,waitFor,timeoutMs}}`，修改时带上原 `id` 和 `revision`。`serial_script_run` 接收 `{script_id,session_id,revision}`，返回任务 ID；使用 `serial_task` 查看结果。
 
 推荐先查 `serial_sessions` 并复用已有连接。`serial_events` 返回 `next_cursor`，下次用它作为 `after`。每个客户端自己的游标互不影响。`gap: true` 表示游标之前存在缺口，`first_available` 是当前最早事件；不要把缓存结果当作完整历史。仅退出 MCP 时不要调用 `serial_close`。
 
@@ -92,7 +96,7 @@ $wb = '.\target\release\serial-workbench.exe'
 - 默认按普通文字匹配，`[DMS]` 等内容无需正则转义。可以关闭“保留默认配色”，仅使用自己的规则；“恢复默认”会清空自定义规则。规则自动保存在当前浏览器的工作台站点中，同站点多标签页同步，适用于所有会话；不修改原始日志或设备状态。即使暂停显示，调整颜色也不会推进日志位置。
 - 搜索匹配词单独高亮，支持文本/HEX、暂停显示、历史文件查询和原始 RX 导出。交互终端保留设备原始 ANSI 行为；高亮仅作用于日志视图，不修改落盘数据。
 - xterm.js 交互终端，默认不直接发送键盘输入；需要交互时显式启用。发送输入进入同一队列。
-- 显示来源为你 / CLI / AI-MCP 的操作记录和任务状态。
+- 协作卡片直接显示命令预览、条数、端口、来源与状态；点击“命令与回包”查看发送/等待/间隔步骤和实际 TX/RX。默认跨会话显示，可筛选当前会话。记录重启后保留，纯回车显示为 `⟨CR⟩`，不再成为空白卡片。
 - 设置行尾、等待文本和超时；上传 JSON 宏包后运行。
 - 原始接收时间以 UTC 存储，界面显示浏览器本地时间；设备自身输出的时间保持原样。
 - 页面实时窗口最多保留 4000 个事件、渲染最近 600 个匹配日志行。暂停显示不会暂停采集，较早内容可查历史文件。
@@ -104,9 +108,29 @@ $wb = '.\target\release\serial-workbench.exe'
 3. 可选填写“每条命令后等待响应”：匹配指定文本后再继续，超时会停止整个脚本。没有等待条件时，只按间隔发送，不判断设备是否执行成功。
 4. 保存后点击卡片上的“运行”，整个脚本作为一个任务进入当前会话的共享队列。执行期间日志继续采集，可在“协作”页取消。
 
-发送框下的“存为快捷脚本”可把现有文本带入编辑器。脚本仅支持 UTF-8 文本；已开启“隐藏发送内容”的输入不会被复制保存。保存本身不执行任何命令，脚本保存在当前浏览器工作台站点中，刷新后保留，同站点的多个标签页同步。
+发送框下的“存为快捷脚本”可把现有文本带入编辑器。脚本仅支持 UTF-8 文本；已开启“隐藏发送内容”的输入不会被复制保存。保存本身不执行任何命令。脚本保存到本机后台的 `workbench-data/scripts.json`，网页、CLI 与 MCP 共用；网页首次加载时自动迁移旧浏览器脚本，并保留原 localStorage 备份。修改、删除和运行带版本检查，避免另一端的更改被静默覆盖；执行任务保存当时的脚本版本及命令快照。
+
+```powershell
+& $wb scripts list
+& $wb scripts show <script-id>
+& $wb scripts save .\status-script.json
+& $wb scripts run <script-id> <session-id> --revision 1 --wait --details
+& $wb scripts delete <script-id> --revision 1
+```
+
+JSON 示例：
+
+```json
+{"name":"只读设备状态检查","commands":"date\nuptime\npidof avmanage","newline":"crlf","intervalMs":200,"waitFor":"","timeoutMs":5000}
+```
 
 没有响应等待的宏显示 `completed`（流程完成），表示主机已执行完发送/间隔步骤；包含响应等待并匹配成功的宏显示 `succeeded`。二者都不等同于取得设备命令的退出码。
+
+## 任务详情与留存
+
+每个任务独立写入 `workbench-data/tasks/<task-uuid>.json`，包含命令计划、状态、脚本版本和实际收发窗口。默认列表显示最近 200 条；启动最多载入最近 1000 条，更早的记录仍可按 ID 查询。未完成的任务在异常重启后标为 `interrupted`，不会重新发送。
+
+收发窗口最多 64 KiB / 512 个事件，延续至任务结束后一秒，遇到下一任务则截止；可能包含设备主动输出的背景日志，不代表全部都是命令回复。界面明确提示缺口、截断和历史重建记录。无等待条件的慢命令可能在窗口结束后继续输出，可到会话日志查看。任务窗口单独保存，不依赖会话日志继续留存。
 
 ## 本地日志与留存
 
@@ -146,6 +170,6 @@ cargo build --release --bin serial-workbench
 python scripts/smoke-workbench.py target/release/serial-workbench.exe
 ```
 
-Python 冒烟测试使用 `websockets` 包，只创建自己的模拟会话和临时日志目录，不访问物理串口。覆盖 CLI、网页静态资源、WebSocket 同源多读者与重连、MCP 发现和操作、MCP 退出不关闭连接、超时退出码、落盘与导出。Rust 测试覆盖队列互斥、取消、宏与采集共存、游标溢出和历史读取。
+Python 冒烟测试使用 `websockets` 包，只创建自己的模拟会话和临时日志目录，不访问物理串口。覆盖 CLI、网页静态资源、WebSocket 同源多读者与重连、15 个 MCP 工具的发现、共享脚本跨端运行、任务命令与回包、重启恢复、MCP 退出不关闭连接、超时退出码、落盘与导出。Rust 测试还覆盖任务留存、敏感详情隐藏、脚本版本冲突和未完成任务恢复。
 
-当前没有实际硬件验收，也不宣称已验证 USB 拔插、电平变化或设备重启后的恢复行为。自动重连、图形化宏编辑和桌面托盘不在这一版中。
+已在 COM6（CH340，115200 8N1，无流控）验证真实接收及只读命令组；尚未验证 USB 拔插、电平变化或设备重启后的恢复行为。自动重连、图形化宏编辑和桌面托盘不在这一版中。

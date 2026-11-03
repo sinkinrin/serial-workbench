@@ -341,3 +341,136 @@ async fn quick_script_sends_multiple_commands_without_claiming_response_match() 
     assert_eq!(sent, vec!["date\r\n", "uptime\r\n"]);
     hub.shutdown().await;
 }
+
+#[tokio::test]
+async fn task_details_keep_commands_received_bytes_and_survive_restart() {
+    let dir = tempfile::tempdir().unwrap();
+    let hub = Hub::new(dir.path().into()).await.unwrap();
+    let s = hub.open(demo()).await.unwrap();
+    let task = hub
+        .send(&s.id, send("details-probe\r\n", Some("OK")))
+        .await
+        .unwrap();
+    let done = finished(&hub, &task.id).await;
+    assert_eq!(done.command_count, 1);
+    assert!(done.commands_preview[0].contains("⟨CR⟩"));
+    hub.shutdown().await;
+    let record = hub.task_details(&task.id).await.unwrap();
+    assert_eq!(record.steps[0].data.as_deref(), Some("details-probe\r\n"));
+    assert!(record.transcript.finalized);
+    assert!(record
+        .transcript
+        .events
+        .iter()
+        .any(|e| e.direction == "tx" && e.text == "details-probe\r\n"));
+    assert!(record
+        .transcript
+        .events
+        .iter()
+        .any(|e| e.direction == "rx" && e.text.contains("DEMO received")));
+    std::fs::remove_file(dir.path().join(&s.id).join("events.jsonl")).unwrap();
+    let restarted = Hub::new(dir.path().into()).await.unwrap();
+    let saved = restarted.task_details(&task.id).await.unwrap();
+    assert_eq!(saved.info.status, "succeeded");
+    assert_eq!(
+        saved.transcript.events.len(),
+        record.transcript.events.len()
+    );
+}
+
+#[tokio::test]
+async fn sensitive_task_details_never_publish_the_echoed_input() {
+    let dir = tempfile::tempdir().unwrap();
+    let hub = Hub::new(dir.path().into()).await.unwrap();
+    let s = hub.open(demo()).await.unwrap();
+    let mut request = send("PRIVATE_TEST_INPUT_123\r\n", Some("OK"));
+    request.sensitive = true;
+    let task = hub.send(&s.id, request).await.unwrap();
+    finished(&hub, &task.id).await;
+    hub.shutdown().await;
+    let record = hub.task_details(&task.id).await.unwrap();
+    let encoded = serde_json::to_string(&record).unwrap();
+    assert!(record.transcript.hidden);
+    assert!(record.transcript.events.is_empty());
+    assert!(!encoded.contains("PRIVATE_TEST_INPUT_123"));
+    let disk = std::fs::read_to_string(dir.path().join("tasks").join(format!("{}.json", task.id)))
+        .unwrap();
+    assert!(!disk.contains("PRIVATE_TEST_INPUT_123"));
+}
+
+#[tokio::test]
+async fn shared_scripts_check_revisions_and_run_an_auditable_snapshot() {
+    let dir = tempfile::tempdir().unwrap();
+    let hub = Hub::new(dir.path().into()).await.unwrap();
+    let s = hub.open(demo()).await.unwrap();
+    let create = serde_json::from_value(
+        json!({"name":"Shared status","commands":"first\nsecond","intervalMs":0,"source":"human"}),
+    )
+    .unwrap();
+    let first = hub.save_script(create).await.unwrap();
+    assert_eq!(first.revision, 1);
+    let mut edit = serde_json::to_value(&first).unwrap();
+    edit["commands"] = json!("updated-first\nupdated-second");
+    edit["source"] = json!("mcp");
+    let second = hub
+        .save_script(serde_json::from_value(edit.clone()).unwrap())
+        .await
+        .unwrap();
+    assert_eq!(second.revision, 2);
+    assert!(hub
+        .save_script(serde_json::from_value(edit).unwrap())
+        .await
+        .is_err());
+    assert!(hub.delete_script(&first.id, 1).await.is_err());
+    let stale =
+        serde_json::from_value(json!({"session_id":s.id,"revision":1,"source":"cli"})).unwrap();
+    assert!(hub.run_script(&first.id, stale).await.is_err());
+    let run =
+        serde_json::from_value(json!({"session_id":s.id,"revision":2,"source":"cli"})).unwrap();
+    let task = hub.run_script(&first.id, run).await.unwrap();
+    finished(&hub, &task.id).await;
+    hub.shutdown().await;
+    let restarted = Hub::new(dir.path().into()).await.unwrap();
+    assert_eq!(restarted.script_list().await.len(), 1);
+    assert_eq!(
+        restarted.script(&first.id).await.unwrap().commands,
+        "updated-first\nupdated-second"
+    );
+    let record = restarted.task_details(&task.id).await.unwrap();
+    assert_eq!(record.script.unwrap().revision, 2);
+    assert_eq!(record.info.command_count, 2);
+    assert!(record
+        .steps
+        .iter()
+        .any(|s| s.data.as_deref() == Some("updated-second\r\n")));
+    restarted.delete_script(&first.id, 2).await.unwrap();
+    assert!(restarted.script_list().await.is_empty());
+    let deleted_edit = serde_json::from_value(serde_json::to_value(&second).unwrap()).unwrap();
+    assert!(restarted.save_script(deleted_edit).await.is_err());
+}
+
+#[tokio::test]
+async fn unfinished_persisted_tasks_are_marked_interrupted_without_reexecution() {
+    let dir = tempfile::tempdir().unwrap();
+    let hub = Hub::new(dir.path().into()).await.unwrap();
+    let s = hub.open(demo()).await.unwrap();
+    let task = hub.send(&s.id, send("sample", Some("OK"))).await.unwrap();
+    finished(&hub, &task.id).await;
+    hub.shutdown().await;
+    let mut record = hub.task_details(&task.id).await.unwrap();
+    record.info.status = "running".into();
+    record.info.finished_at = None;
+    let path = dir.path().join("tasks").join(format!("{}.json", task.id));
+    std::fs::write(path, serde_json::to_vec(&record).unwrap()).unwrap();
+    let restarted = Hub::new(dir.path().into()).await.unwrap();
+    assert_eq!(
+        restarted.task(&task.id).await.unwrap().status,
+        "interrupted"
+    );
+    assert!(restarted
+        .list()
+        .await
+        .unwrap()
+        .iter()
+        .all(|s| s.state != "connected"));
+}

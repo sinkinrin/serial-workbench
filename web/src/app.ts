@@ -1,3 +1,5 @@
+import { initTaskPanel } from "./task-panel";
+import type { TaskSummary } from "./task-panel";
 import { initQuickScripts } from "./script-panel";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
@@ -50,16 +52,7 @@ type Page = {
   first_available: number;
   has_more: boolean;
 };
-type Task = {
-  id: string;
-  session_id: string;
-  source: string;
-  label: string;
-  status: string;
-  created_at: string;
-  finished_at: string | null;
-  message: string | null;
-};
+type Task = TaskSummary;
 const $ = <T extends HTMLElement = HTMLElement>(id: string) =>
   document.getElementById(id) as T;
 const input = (id: string) => $(id) as HTMLInputElement;
@@ -100,6 +93,7 @@ let renderPending = false,
   toastTimer: number | undefined,
   macroPack: any = null;
 let updateScriptConnection = () => {};
+let updateTaskPanel = (_tasks: TaskSummary[]) => {};
 let colorSettings = defaultColors();
 try {
   colorSettings = parseColors(localStorage.getItem(COLOR_STORAGE_KEY));
@@ -273,6 +267,7 @@ async function refresh() {
       header();
     }
     renderTasks(await api<Task[]>("/tasks"));
+    updateScriptConnection();
   } catch (e) {
     $("service-status").textContent = "后台连接中断";
     $("service-dot").classList.remove("online");
@@ -537,50 +532,7 @@ async function loadHistory(reset: boolean) {
   render();
 }
 function renderTasks(tasks: Task[]) {
-  const selectedTasks = tasks.filter((t) => t.session_id === selected);
-  $("task-count").textContent = String(selectedTasks.length);
-  const list = $("tasks");
-  list.replaceChildren();
-  if (!selectedTasks.length) {
-    const p = document.createElement("p");
-    p.className = "muted empty-tasks";
-    p.textContent = "你、CLI 和 AI 的任务会显示在这里。";
-    list.append(p);
-  }
-  for (const task of selectedTasks.slice(0, 12)) {
-    const card = document.createElement("div");
-    card.className = "task-card";
-    const top = document.createElement("div");
-    top.className = "task-top";
-    const who = document.createElement("span");
-    who.textContent = `${labels[task.source] || task.source} · ${new Date(task.created_at).toLocaleTimeString("zh-CN", { hour12: false })}`;
-    const state = document.createElement("span");
-    state.className = `task-status ${task.status}`;
-    state.textContent = labels[task.status] || task.status;
-    top.append(who, state);
-    const title = document.createElement("div");
-    title.className = "task-label";
-    title.textContent = task.label;
-    title.title = task.label;
-    card.append(top, title);
-    if (task.message) {
-      const p = document.createElement("div");
-      p.className = "message";
-      p.textContent = task.message;
-      card.append(p);
-    }
-    if (!task.finished_at) {
-      const cancel = document.createElement("button");
-      cancel.className = "text-button";
-      cancel.textContent = "取消";
-      cancel.onclick = () =>
-        api(`/tasks/${task.id}/cancel`, {}).catch((e) =>
-          toast(e.message, true),
-        );
-      card.append(cancel);
-    }
-    list.append(card);
-  }
+  updateTaskPanel(tasks);
 }
 async function openDemo() {
   const existing = sessions.find((s) => s.demo && s.state === "connected");
@@ -1074,7 +1026,16 @@ updateScriptConnection = initQuickScripts({
     sensitive: input("sensitive").checked,
   }),
   request: (path, body) => api(path, body),
+  get: (path) => api(path),
   notify: toast,
   showTasks: () => showPanel("tasks"),
   showScripts: () => showPanel("scripts"),
+});
+
+updateTaskPanel = initTaskPanel({
+  get: (path) => api(path),
+  post: (path, body) => api(path, body),
+  selectedSession: () => selected,
+  notify: toast,
+  labels,
 });

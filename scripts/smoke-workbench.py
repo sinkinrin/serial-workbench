@@ -111,7 +111,7 @@ def main():
             mcp.stdin.write(b'{"jsonrpc":"2.0","method":"notifications/initialized"}\n')
             mcp.stdin.flush()
             tools = rpc('tools/list', {})['tools']
-            assert len(tools) == 10
+            assert len(tools) == 15
             def tool(name, arguments):
                 result = rpc('tools/call', {'name': name, 'arguments': arguments})
                 assert not result.get('isError'), result
@@ -121,6 +121,17 @@ def main():
             assert cli('task', task['id'], '--wait')['status'] == 'succeeded'
             page = tool('serial_events', {'session_id': sid, 'after': 0, 'limit': 1000})
             assert any(e['source'] == 'mcp' and e['direction'] == 'tx' for e in page['events'])
+            shared = tool('serial_script_save', {'script': {'name': 'shared-status', 'commands': 'shared-one\nshared-two', 'newline': 'crlf', 'intervalMs': 20, 'waitFor': 'OK', 'timeoutMs': 2000}})
+            assert any(s['id'] == shared['id'] for s in cli('scripts', 'list'))
+            shared_task = cli('scripts', 'run', shared['id'], sid, '--revision', str(shared['revision']), '--wait', '--details')
+            assert shared_task['status'] == 'succeeded'
+            assert shared_task['script']['id'] == shared['id']
+            assert shared_task['transcript']['finalized']
+            assert [e['text'] for e in shared_task['transcript']['events'] if e['direction'] == 'tx'] == ['shared-one\r\n', 'shared-two\r\n']
+            assert any(e['direction'] == 'rx' and 'shared-two' in e['text'] for e in shared_task['transcript']['events'])
+            mcp_detail = tool('serial_task', {'task_id': shared_task['id']})
+            assert len([s for s in mcp_detail['steps'] if s['kind'] == 'send']) == 2
+            assert api('/tasks/' + shared_task['id'] + '/details')['command_count'] == 2
             mcp.stdin.close()
             mcp.wait(timeout=5)
             assert api('/sessions')[0]['state'] == 'connected', 'MCP detach stopped shared capture'
@@ -153,7 +164,19 @@ def main():
             assert daemon.returncode == 0
             last_info = json.loads((pathlib.Path(directory) / last_id / 'session.json').read_bytes())
             assert last_info['state'] == 'closed' and last_info['active_task'] is None
-            print(json.dumps({'ok': True, 'checks': ['embedded web assets', 'CLI send/expect', 'quick script ordered batch', 'WebSocket fan-out', 'cursor reconnect', 'MCP discovery and send', 'MCP detach keeps capture', 'timeout exit status', 'disk history', 'raw export', 'graceful daemon shutdown'], 'mcp_tools': len(tools)}, indent=2))
+            daemon = subprocess.Popen([binary, 'serve', '--port', str(port), '--data-dir', directory], stdout=log, stderr=log)
+            for _ in range(100):
+                try:
+                    api('/status')
+                    break
+                except OSError:
+                    time.sleep(.05)
+            assert cli('scripts', 'show', shared['id'])['commands'] == 'shared-one\nshared-two'
+            recovered = cli('task', shared_task['id'], '--details')
+            assert recovered['status'] == 'succeeded' and recovered['transcript']['events']
+            cli('stop')
+            daemon.wait(timeout=5)
+            print(json.dumps({'ok': True, 'checks': ['embedded web assets', 'CLI send/expect', 'quick script ordered batch', 'WebSocket fan-out', 'cursor reconnect', 'MCP discovery and send', 'MCP detach keeps capture', 'timeout exit status', 'disk history', 'raw export', 'shared MCP/CLI/GUI scripts', 'task commands and receive window', 'persistent task and script recovery', 'graceful daemon shutdown'], 'mcp_tools': len(tools)}, indent=2))
         finally:
             if mcp and mcp.poll() is None:
                 mcp.terminate()

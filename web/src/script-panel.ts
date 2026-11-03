@@ -3,7 +3,6 @@ import {
   MAX_SCRIPTS,
   commandLines,
   parseScripts,
-  scriptRequest,
   validateScript,
 } from "./quick-scripts";
 import type { QuickScript, ScriptNewline } from "./quick-scripts";
@@ -19,6 +18,7 @@ type Context = {
     sensitive: boolean;
   };
   request: (path: string, body: unknown) => Promise<unknown>;
+  get: (path: string) => Promise<unknown>;
   notify: (message: string, error?: boolean) => void;
   showTasks: () => void;
   showScripts: () => void;
@@ -31,15 +31,16 @@ export function initQuickScripts(context: Context): () => void {
   const dialog = el<HTMLDialogElement>("script-dialog");
   const list = el("script-list");
   let scripts: QuickScript[] = [];
-  try {
-    scripts = parseScripts(localStorage.getItem(SCRIPT_STORAGE_KEY));
-  } catch {
-    /* Show save failures when the user saves. */
-  }
   let editingId: string | undefined;
+  let editingRevision = 0;
+  let loading = false;
+  let initialized = false;
+  let lastLoaded = 0;
+  const migrationKey = "serial-workbench-quick-scripts-shared-migrated-v1";
   const pending = new Set<string>();
 
   function connectionState() {
+    if (!loading && Date.now() - lastLoaded > 2500) void loadShared();
     const connected = context.getSession()?.state === "connected";
     for (const run of Array.from(
       list.querySelectorAll<HTMLButtonElement>("button[data-run]"),
@@ -49,20 +50,73 @@ export function initQuickScripts(context: Context): () => void {
       ? "运行到当前会话 · 任务可在协作中取消"
       : "可离线编辑，连接设备后运行";
   }
-  function persist(next: QuickScript[]): boolean {
+  async function loadShared() {
+    if (loading) return;
+    loading = true;
     try {
-      localStorage.setItem(
-        SCRIPT_STORAGE_KEY,
-        JSON.stringify({ version: 1, scripts: next }),
-      );
-      scripts = next;
+      let remote = (await context.get("/scripts")) as QuickScript[];
+      if (!initialized) {
+        let legacy: QuickScript[] = [],
+          migrate = false;
+        try {
+          migrate = localStorage.getItem(migrationKey) !== "1";
+          if (migrate)
+            legacy = parseScripts(localStorage.getItem(SCRIPT_STORAGE_KEY));
+        } catch {
+          /* Shared scripts work without browser storage. */
+        }
+        if (legacy.length) {
+          for (const script of legacy) {
+            if (remote.some((s) => s.id === script.id)) continue;
+            const saved = (await context.request("/scripts", {
+              ...script,
+              source: "human",
+              revision: 0,
+            })) as QuickScript;
+            remote.push(saved);
+          }
+          context.notify(`旧脚本已迁移到共享后台，本地备份保留`);
+        }
+        if (migrate) {
+          try {
+            localStorage.setItem(migrationKey, "1");
+          } catch {
+            /* Keeping legacy backup makes a retry safe. */
+          }
+        }
+        initialized = true;
+      }
+      const changed = JSON.stringify(remote) !== JSON.stringify(scripts);
+      scripts = remote;
+      lastLoaded = Date.now();
+      el("script-storage-status").textContent =
+        "已保存到本机共享后台 · 网页、CLI 和 AI 共用";
+      if (changed || !list.childElementCount) render();
+    } catch (error) {
+      lastLoaded = Date.now();
+      el("script-storage-status").textContent =
+        `共享脚本读取失败，原有本地备份未删除：${(error as Error).message}`;
+    } finally {
+      loading = false;
+    }
+  }
+  async function save(script: QuickScript): Promise<boolean> {
+    try {
+      const saved = (await context.request("/scripts", {
+        ...script,
+        source: "human",
+      })) as QuickScript;
+      const index = scripts.findIndex((s) => s.id === saved.id);
+      if (index < 0) scripts.push(saved);
+      else scripts[index] = saved;
       render();
       return true;
-    } catch {
+    } catch (error) {
       context.notify(
-        "保存失败：浏览器存储不可用或空间已满，编辑内容仍保留在窗口中。",
+        `保存失败，编辑内容仍保留：${(error as Error).message}`,
         true,
       );
+      void loadShared();
       return false;
     }
   }
@@ -81,6 +135,7 @@ export function initQuickScripts(context: Context): () => void {
       return;
     }
     editingId = script?.id;
+    editingRevision = script?.revision ?? 0;
     el("script-dialog-title").textContent = script
       ? "编辑快捷脚本"
       : "新建快捷脚本";
@@ -111,10 +166,11 @@ export function initQuickScripts(context: Context): () => void {
     pending.add(script.id);
     connectionState();
     try {
-      await context.request(
-        `/sessions/${session.id}/macro`,
-        scriptRequest(script),
-      );
+      await context.request(`/scripts/${script.id}/run`, {
+        session_id: session.id,
+        source: "human",
+        revision: script.revision,
+      });
       context.showTasks();
       context.notify(
         `“${script.name}”已加入队列，共 ${commandLines(script.commands).length} 条命令`,
@@ -150,7 +206,7 @@ export function initQuickScripts(context: Context): () => void {
       const lines = commandLines(script.commands);
       const meta = document.createElement("p");
       meta.className = "script-meta";
-      meta.textContent = `${lines.length} 条命令 · ${script.newline === "none" ? "无行尾" : script.newline.toUpperCase()} · ${script.intervalMs} ms${script.waitFor ? " · 等待响应" : ""}`;
+      meta.textContent = `v${script.revision ?? 1} · ${lines.length} 条命令 · ${script.newline === "none" ? "无行尾" : script.newline.toUpperCase()} · ${script.intervalMs} ms${script.waitFor ? " · 等待响应" : ""}`;
       const preview = document.createElement("pre");
       preview.textContent =
         lines.slice(0, 3).join("\n").slice(0, 240) +
@@ -169,9 +225,18 @@ export function initQuickScripts(context: Context): () => void {
       const remove = document.createElement("button");
       remove.className = "text-button delete-script";
       remove.textContent = "删除";
-      remove.onclick = () => {
-        if (persist(scripts.filter((s) => s.id !== script.id)))
-          context.notify("脚本已删除");
+      remove.onclick = async () => {
+        try {
+          await context.request(`/scripts/${script.id}/delete`, {
+            revision: script.revision,
+          });
+          scripts = scripts.filter((s) => s.id !== script.id);
+          render();
+          context.notify("共享脚本已删除");
+        } catch (error) {
+          context.notify((error as Error).message, true);
+          void loadShared();
+        }
       };
       actions.append(run, edit, remove);
       card.append(title, meta, preview, actions);
@@ -190,7 +255,7 @@ export function initQuickScripts(context: Context): () => void {
   );
   for (const id of ["close-script-dialog", "cancel-script-editor"])
     el(id).addEventListener("click", () => dialog.close());
-  el("script-form").addEventListener("submit", (event) => {
+  el("script-form").addEventListener("submit", async (event) => {
     event.preventDefault();
     if (!editingId && scripts.length >= MAX_SCRIPTS) {
       context.notify("最多保存 100 个脚本。", true);
@@ -198,6 +263,7 @@ export function initQuickScripts(context: Context): () => void {
     }
     const script: QuickScript = {
       id: editingId ?? crypto.randomUUID(),
+      revision: editingRevision,
       name: value("script-name").trim(),
       commands: value("script-commands"),
       newline: value("script-newline") as ScriptNewline,
@@ -210,22 +276,20 @@ export function initQuickScripts(context: Context): () => void {
       context.notify(error, true);
       return;
     }
-    const next = [...scripts],
-      index = next.findIndex((s) => s.id === script.id);
-    if (index >= 0) next[index] = script;
-    else next.push(script);
-    if (persist(next)) {
-      dialog.close();
-      context.showScripts();
-      context.notify("脚本已保存，刷新页面后仍可使用");
+    const submit = el<HTMLButtonElement>("save-shared-script");
+    submit.disabled = true;
+    try {
+      if (await save(script)) {
+        dialog.close();
+        context.showScripts();
+        context.notify("脚本已保存，网页和 AI 都可以使用");
+      }
+    } finally {
+      submit.disabled = false;
     }
   });
-  window.addEventListener("storage", (event) => {
-    if (event.key === SCRIPT_STORAGE_KEY) {
-      scripts = parseScripts(event.newValue);
-      render();
-    }
-  });
+  window.addEventListener("focus", () => void loadShared());
   render();
+  void loadShared();
   return connectionState;
 }

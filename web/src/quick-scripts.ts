@@ -7,6 +7,9 @@ export type QuickScript = {
   intervalMs: number;
   waitFor: string;
   timeoutMs: number;
+  revision?: number;
+  updatedAt?: string;
+  updatedBy?: string;
 };
 export const SCRIPT_STORAGE_KEY = "serial-workbench-quick-scripts-v1";
 export const MAX_SCRIPTS = 100;

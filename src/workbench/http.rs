@@ -1,4 +1,4 @@
-use super::{model::*, Hub};
+use super::{model::*, scripts::*, Hub};
 use anyhow::Result;
 use axum::{
     body::Body,
@@ -104,6 +104,11 @@ pub fn router(hub: Arc<Hub>, address: SocketAddr) -> Router {
         .route("/api/sessions/{id}/export", get(export))
         .route("/api/tasks", get(tasks))
         .route("/api/tasks/{id}", get(task))
+        .route("/api/tasks/{id}/details", get(task_details))
+        .route("/api/scripts", get(scripts).post(save_script))
+        .route("/api/scripts/{id}", get(script))
+        .route("/api/scripts/{id}/delete", post(delete_script))
+        .route("/api/scripts/{id}/run", post(run_script))
         .route("/api/tasks/{id}/cancel", post(cancel))
         .layer(axum::extract::DefaultBodyLimit::max(2 * 1024 * 1024))
         .layer(middleware::from_fn_with_state(state.clone(), local_only))
@@ -205,8 +210,12 @@ async fn takeover(State(app): State<App>, Path(id): Path<String>) -> Api<serde_j
     app.hub.takeover(&id).await?;
     Ok(Json(serde_json::json!({"ok":true})))
 }
-async fn tasks(State(app): State<App>) -> Json<Vec<TaskInfo>> {
-    Json(app.hub.task_list().await)
+#[derive(serde::Deserialize)]
+struct TaskListQuery {
+    session_id: Option<String>,
+}
+async fn tasks(State(app): State<App>, Query(query): Query<TaskListQuery>) -> Json<Vec<TaskInfo>> {
+    Json(app.hub.task_list_for(query.session_id.as_deref()).await)
 }
 async fn task(State(app): State<App>, Path(id): Path<String>) -> Api<TaskInfo> {
     Ok(Json(app.hub.task(&id).await?))
@@ -310,4 +319,35 @@ async fn shutdown(State(app): State<App>) -> Json<serde_json::Value> {
 async fn release_control(State(app): State<App>, Path(id): Path<String>) -> Api<serde_json::Value> {
     app.hub.release_control(&id).await?;
     Ok(Json(serde_json::json!({"ok": true})))
+}
+
+async fn task_details(State(app): State<App>, Path(id): Path<String>) -> Api<TaskDetails> {
+    Ok(Json(app.hub.task_details(&id).await?))
+}
+async fn scripts(State(app): State<App>) -> Json<Vec<SavedScript>> {
+    Json(app.hub.script_list().await)
+}
+async fn script(State(app): State<App>, Path(id): Path<String>) -> Api<SavedScript> {
+    Ok(Json(app.hub.script(&id).await?))
+}
+async fn save_script(
+    State(app): State<App>,
+    Json(request): Json<SaveScriptRequest>,
+) -> Api<SavedScript> {
+    Ok(Json(app.hub.save_script(request).await?))
+}
+async fn delete_script(
+    State(app): State<App>,
+    Path(id): Path<String>,
+    Json(request): Json<DeleteScriptRequest>,
+) -> Api<serde_json::Value> {
+    app.hub.delete_script(&id, request.revision).await?;
+    Ok(Json(serde_json::json!({"deleted":true})))
+}
+async fn run_script(
+    State(app): State<App>,
+    Path(id): Path<String>,
+    Json(request): Json<RunScriptRequest>,
+) -> Api<TaskInfo> {
+    Ok(Json(app.hub.run_script(&id, request).await?))
 }
