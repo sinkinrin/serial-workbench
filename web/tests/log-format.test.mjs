@@ -69,3 +69,112 @@ test("untrusted device text stays text rather than HTML", () => {
     text,
   );
 });
+
+import { defaultColors, parseColors } from "../src/log-colors.ts";
+const rule = (keyword, color, extra = {}) => ({
+  keyword,
+  color,
+  enabled: true,
+  caseSensitive: false,
+  ...extra,
+});
+
+test("custom literal keywords override built-in colors without regex interpretation", () => {
+  const options = {
+    rules: [rule("[DMS]", "#123456"), rule("speed=0", "#abcdef")],
+  };
+  const parts = logParts("[DMS] speed=0 DMS", "", options);
+  assert.equal(
+    parts
+      .filter((p) => p.color === "#123456")
+      .map((p) => p.text)
+      .join(""),
+    "[DMS]",
+  );
+  assert.equal(
+    parts
+      .filter((p) => p.color === "#abcdef")
+      .map((p) => p.text)
+      .join(""),
+    "speed=0",
+  );
+  assert(parts.some((p) => p.kind === "dms" && p.text === "DMS"));
+});
+
+test("first rule wins overlaps, with per-rule case matching and enabled state", () => {
+  const parts = logParts("ADAS adas", "", {
+    builtins: false,
+    rules: [
+      rule("ADAS", "#112233", { caseSensitive: true }),
+      rule("adas", "#445566"),
+      rule("AD", "#778899"),
+    ],
+  });
+  assert.equal(
+    parts
+      .filter((p) => p.color === "#112233")
+      .map((p) => p.text)
+      .join(""),
+    "ADAS",
+  );
+  assert.equal(
+    parts
+      .filter((p) => p.color === "#445566")
+      .map((p) => p.text)
+      .join(""),
+    "adas",
+  );
+  assert(!parts.some((p) => p.color === "#778899"));
+  assert(
+    logParts("ADAS", "", {
+      builtins: false,
+      rules: [rule("ADAS", "#112233", { enabled: false })],
+    }).every((p) => !p.color && !p.kind),
+  );
+});
+
+test("custom colors coexist with search marks and default colors can be disabled", () => {
+  const text = "连接失败 ERROR";
+  const parts = logParts(text, "连接失", {
+    builtins: false,
+    rules: [rule("连接失败", "#ff8800")],
+  });
+  assert.equal(parts.map((p) => p.text).join(""), text);
+  assert.equal(
+    parts
+      .filter((p) => p.match)
+      .map((p) => p.text)
+      .join(""),
+    "连接失",
+  );
+  assert.equal(
+    parts
+      .filter((p) => p.color)
+      .map((p) => p.text)
+      .join(""),
+    "连接失败",
+  );
+  assert(parts.every((p) => !p.kind));
+});
+
+test("color settings survive JSON persistence and invalid entries are rejected", () => {
+  const value = {
+    version: 1,
+    builtins: false,
+    rules: [
+      rule("ADAS", "#445566"),
+      rule("[DMS]", "#aabbcc", { enabled: false, caseSensitive: true }),
+    ],
+  };
+  assert.deepEqual(parseColors(JSON.stringify(value)), value);
+  assert.deepEqual(parseColors("broken"), defaultColors());
+  assert.deepEqual(
+    parseColors(
+      JSON.stringify({
+        version: 1,
+        rules: [rule("x", "url(https://example.com)"), rule("", "#aabbcc")],
+      }),
+    ).rules,
+    [],
+  );
+});

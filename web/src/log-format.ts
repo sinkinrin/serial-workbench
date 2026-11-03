@@ -1,3 +1,4 @@
+import type { ColorRule } from "./log-colors";
 export type LogKind =
   | "error"
   | "warning"
@@ -9,7 +10,12 @@ export type LogKind =
   | "network"
   | "metric"
   | "timestamp";
-export type LogPart = { text: string; kind?: LogKind; match: boolean };
+export type LogPart = {
+  text: string;
+  kind?: LogKind;
+  color?: string;
+  match: boolean;
+};
 export type LogEvent = {
   seq: number;
   direction: string;
@@ -101,15 +107,23 @@ const tokenRules: [LogKind, RegExp][] = [
 ];
 
 // Return text segments, never HTML. Rendering uses textContent for device-controlled data.
-export function logParts(text: string, search = ""): LogPart[] {
+export function logParts(
+  text: string,
+  search = "",
+  options: { rules?: ColorRule[]; builtins?: boolean } = {},
+): LogPart[] {
   const ranges: {
     start: number;
     end: number;
     kind?: LogKind;
+    color?: string;
     match?: boolean;
     priority: number;
   }[] = [];
-  for (const [priority, [kind, pattern]] of tokenRules.entries()) {
+  for (const [priority, [kind, pattern]] of (options.builtins === false
+    ? []
+    : tokenRules
+  ).entries()) {
     pattern.lastIndex = 0;
     for (const match of text.matchAll(pattern)) {
       let actualKind = kind;
@@ -122,6 +136,22 @@ export function logParts(text: string, search = ""): LogPart[] {
         end: match.index! + match[0].length,
         kind: actualKind,
         priority,
+      });
+    }
+  }
+  for (const [index, rule] of (options.rules ?? []).entries()) {
+    const keyword = rule.keyword.trim();
+    if (!rule.enabled || !keyword || !/^#[0-9a-f]{6}$/i.test(rule.color))
+      continue;
+    // Keywords are literal text, including regex metacharacters such as [DMS].
+    const escaped = keyword.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const pattern = new RegExp(escaped, rule.caseSensitive ? "gu" : "giu");
+    for (const match of text.matchAll(pattern)) {
+      ranges.push({
+        start: match.index!,
+        end: match.index! + match[0].length,
+        color: rule.color,
+        priority: index - 1000,
       });
     }
   }
@@ -152,9 +182,11 @@ export function logParts(text: string, search = ""): LogPart[] {
     const active = ranges
       .filter((r) => r.start <= start && r.end >= end)
       .sort((a, b) => a.priority - b.priority);
+    const colored = active.find((r) => r.kind || r.color);
     parts.push({
       text: text.slice(start, end),
-      kind: active.find((r) => r.kind)?.kind,
+      kind: colored?.kind,
+      color: colored?.color,
       match: active.some((r) => r.match),
     });
   }

@@ -74,6 +74,7 @@
               ><button class="tab" id="terminal-tab">交互终端</button>
             </div>
             <div class="viewer-actions">
+              <button class="button small" id="color-settings">配色</button>
               <button class="button small" id="focus-view">专注日志</button>
               <span class="live-badge" id="stream-state">等待连接</span
               ><button
@@ -225,6 +226,31 @@
           </div>
         </section>
         <div class="tool-panel hidden" id="tool-tools">
+          <section class="color-section" aria-label="日志配色">
+            <div class="section-title">
+              <h2>日志配色</h2>
+              <span class="tiny-tag">自动保存</span>
+            </div>
+            <p class="hint">
+              关键词匹配对应文字颜色。规则从上往下优先，支持中文，按原文匹配。
+            </p>
+            <label class="color-toggle"
+              ><input id="builtin-colors" type="checkbox" checked />
+              保留默认配色</label
+            >
+            <div id="color-rules" class="color-rules"></div>
+            <div class="color-actions">
+              <button class="button small" id="add-color-rule">
+                ＋ 添加规则</button
+              ><button class="text-button" id="reset-colors">恢复默认</button>
+            </div>
+            <div class="color-preview-label">效果预览</div>
+            <div id="color-preview" class="color-preview"></div>
+            <p class="hint" id="color-save-state" role="status">
+              保存在当前浏览器，适用于所有会话的日志流。
+            </p>
+          </section>
+
           <section class="macro-section">
             <details>
               <summary>运行自动化宏</summary>

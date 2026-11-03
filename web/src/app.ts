@@ -2,6 +2,12 @@ import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import "./style.css";
 import { logLines, logParts, severity } from "./log-format";
+import {
+  COLOR_STORAGE_KEY,
+  MAX_COLOR_RULES,
+  defaultColors,
+  parseColors,
+} from "./log-colors";
 
 type Session = {
   id: string;
@@ -91,6 +97,12 @@ let renderPending = false,
   decoder = new TextDecoder(),
   toastTimer: number | undefined,
   macroPack: any = null;
+let colorSettings = defaultColors();
+try {
+  colorSettings = parseColors(localStorage.getItem(COLOR_STORAGE_KEY));
+} catch {
+  /* Settings still work for this page if storage is blocked. */
+}
 let windowDropped = 0,
   pausedCount = 0;
 const terminal = new Terminal({
@@ -364,6 +376,63 @@ function scheduleRender() {
     render();
   });
 }
+function paintLogText(
+  payload: HTMLElement,
+  content: string,
+  direction: string,
+  search: string,
+  hexMode: boolean,
+) {
+  payload.replaceChildren();
+  if (hexMode) {
+    payload.textContent = content;
+    return;
+  }
+  for (const part of logParts(content, search, {
+    rules: colorSettings.rules,
+    builtins: colorSettings.builtins && direction === "rx",
+  })) {
+    if (!part.kind && !part.color && !part.match)
+      payload.append(document.createTextNode(part.text));
+    else {
+      const token = document.createElement(part.match ? "mark" : "span");
+      token.className = part.color
+        ? "custom-token"
+        : part.kind
+          ? `token-${part.kind}`
+          : "";
+      if (part.color) token.style.color = part.color;
+      token.textContent = part.text;
+      payload.append(token);
+    }
+  }
+}
+function repaintColors() {
+  if (!paused) {
+    scheduleRender();
+    return;
+  }
+  // A paused view can change colors without advancing to newly received data.
+  const view = $("log-view"),
+    scrollTop = view.scrollTop,
+    hexMode = select("display").value === "hex";
+  for (const row of Array.from(
+    view.querySelectorAll<HTMLElement>(".log-row"),
+  )) {
+    const payload = row.querySelector<HTMLElement>(".payload");
+    if (!payload) continue;
+    const content = payload.textContent || "",
+      direction = row.classList.contains("rx") ? "rx" : "other";
+    row.classList.remove("error", "warning", "normal");
+    row.classList.add(
+      direction === "rx" && !hexMode && colorSettings.builtins
+        ? severity(content)
+        : "normal",
+    );
+    paintLogText(payload, content, direction, input("filter").value, hexMode);
+  }
+  view.scrollTop = scrollTop;
+}
 function render() {
   if (!current) return;
   const filter = input("filter").value.toLowerCase();
@@ -391,7 +460,7 @@ function render() {
   const fragment = document.createDocumentFragment();
   for (const e of filtered.slice(-600)) {
     const row = document.createElement("div");
-    row.className = `log-row ${e.direction} ${e.direction === "rx" && !hexMode ? severity(e.content) : "normal"}`;
+    row.className = `log-row ${e.direction} ${e.direction === "rx" && !hexMode && colorSettings.builtins ? severity(e.content) : "normal"}`;
     const source =
       e.direction === "system"
         ? labels[e.source] || e.source
@@ -410,18 +479,7 @@ function render() {
     }
     const payload = document.createElement("span");
     payload.className = "payload";
-    if (hexMode || e.direction !== "rx") payload.textContent = e.content;
-    else
-      for (const part of logParts(e.content, filter)) {
-        if (!part.kind && !part.match)
-          payload.append(document.createTextNode(part.text));
-        else {
-          const token = document.createElement(part.match ? "mark" : "span");
-          token.className = part.kind ? `token-${part.kind}` : "";
-          token.textContent = part.text;
-          payload.append(token);
-        }
-      }
+    paintLogText(payload, e.content, e.direction, filter, hexMode);
     row.append(payload);
     row.title = `事件 #${e.seq}${e.lastSeq !== e.seq ? `–${e.lastSeq}` : ""} · ${e.time}${e.task_id ? ` · 任务 ${e.task_id}` : ""}`;
     fragment.append(row);
@@ -805,14 +863,14 @@ select("encoding").addEventListener("change", () => {
 void refresh();
 
 // Keep the sidebar tools within the viewport rather than stacking tall sections.
-for (const name of ["send", "tasks", "tools"]) {
-  action(`panel-${name}`, () => {
-    for (const other of ["send", "tasks", "tools"]) {
-      $(`panel-${other}`).classList.toggle("active", name === other);
-      $(`tool-${other}`).classList.toggle("hidden", name !== other);
-    }
-  });
+function showPanel(name: string) {
+  for (const other of ["send", "tasks", "tools"]) {
+    $(`panel-${other}`).classList.toggle("active", name === other);
+    $(`tool-${other}`).classList.toggle("hidden", name !== other);
+  }
 }
+for (const name of ["send", "tasks", "tools"])
+  action(`panel-${name}`, () => showPanel(name));
 action("focus-view", () => {
   const focused = document.body.classList.toggle("focus-mode");
   button("focus-view").textContent = focused ? "退出专注" : "专注日志";
@@ -826,3 +884,177 @@ action("show-controls", () => {
   document.body.classList.toggle("controls-open");
   document.body.classList.remove("sessions-open");
 });
+
+function colorPreview() {
+  document
+    .querySelector(".log-legend")
+    ?.classList.toggle(
+      "hidden",
+      !colorSettings.builtins ||
+        colorSettings.rules.some((r) => r.enabled && r.keyword.trim()),
+    );
+  const preview = $("color-preview");
+  preview.replaceChildren();
+  const words = colorSettings.rules
+    .filter((r) => r.enabled && r.keyword.trim())
+    .slice(0, 5)
+    .map((r) => r.keyword.trim());
+  const sample = words.length
+    ? words.join(" · ")
+    : "[ADAS] Detect(57001) 连接失败";
+  for (const part of logParts(sample, "", colorSettings)) {
+    const span = document.createElement("span");
+    if (part.color) span.style.color = part.color;
+    else if (part.kind) span.className = `token-${part.kind}`;
+    span.textContent = part.text;
+    preview.append(span);
+  }
+}
+function saveColors() {
+  try {
+    localStorage.setItem(COLOR_STORAGE_KEY, JSON.stringify(colorSettings));
+    $("color-save-state").textContent = "已保存到当前浏览器 · 所有会话共用";
+  } catch {
+    $("color-save-state").textContent =
+      "浏览器禁止保存，当前页仍生效；刷新后需重新设置。";
+  }
+  colorPreview();
+  repaintColors();
+}
+function renderColorRules() {
+  input("builtin-colors").checked = colorSettings.builtins;
+  const list = $("color-rules");
+  list.replaceChildren();
+  button("add-color-rule").disabled =
+    colorSettings.rules.length >= MAX_COLOR_RULES;
+  if (!colorSettings.rules.length) {
+    const p = document.createElement("p");
+    p.className = "hint color-empty";
+    p.textContent = "还没有自定义规则，添加后会优先于默认配色。";
+    list.append(p);
+  }
+  colorSettings.rules.forEach((rule, index) => {
+    const card = document.createElement("div");
+    card.className = `color-rule${rule.enabled ? "" : " disabled"}`;
+    const first = document.createElement("div");
+    first.className = "color-rule-main";
+    const keyword = document.createElement("input");
+    keyword.type = "text";
+    keyword.maxLength = 128;
+    keyword.value = rule.keyword;
+    keyword.placeholder = "关键词，例如 ADAS";
+    keyword.setAttribute("aria-label", `规则 ${index + 1} 关键词`);
+    keyword.addEventListener("input", () => {
+      rule.keyword = keyword.value;
+      saveColors();
+    });
+    const color = document.createElement("input");
+    color.type = "color";
+    color.value = rule.color;
+    color.title = "选择文字颜色";
+    color.setAttribute("aria-label", `规则 ${index + 1} 颜色`);
+    color.addEventListener("input", () => {
+      rule.color = color.value;
+      saveColors();
+    });
+    first.append(keyword, color);
+    const options = document.createElement("div");
+    options.className = "color-rule-options";
+    const checkbox = (name: "enabled" | "caseSensitive", text: string) => {
+      const label = document.createElement("label"),
+        check = document.createElement("input");
+      check.type = "checkbox";
+      check.checked = rule[name];
+      check.addEventListener("change", () => {
+        rule[name] = check.checked;
+        card.classList.toggle("disabled", !rule.enabled);
+        saveColors();
+      });
+      label.append(check, document.createTextNode(text));
+      options.append(label);
+    };
+    checkbox("enabled", "启用");
+    checkbox("caseSensitive", "区分大小写");
+    const controls = document.createElement("div");
+    controls.className = "color-rule-order";
+    const addAction = (
+      text: string,
+      title: string,
+      fn: () => void,
+      disabled = false,
+    ) => {
+      const b = document.createElement("button");
+      b.className = "icon-button";
+      b.textContent = text;
+      b.title = title;
+      b.setAttribute("aria-label", `${title}规则 ${index + 1}`);
+      b.disabled = disabled;
+      b.onclick = fn;
+      controls.append(b);
+    };
+    const move = (offset: number) => {
+      const target = index + offset;
+      [colorSettings.rules[index], colorSettings.rules[target]] = [
+        colorSettings.rules[target],
+        colorSettings.rules[index],
+      ];
+      renderColorRules();
+      saveColors();
+    };
+    addAction("↑", "上移", () => move(-1), index === 0);
+    addAction(
+      "↓",
+      "下移",
+      () => move(1),
+      index === colorSettings.rules.length - 1,
+    );
+    addAction("×", "删除", () => {
+      colorSettings.rules.splice(index, 1);
+      renderColorRules();
+      saveColors();
+    });
+    options.append(controls);
+    card.append(first, options);
+    list.append(card);
+  });
+  colorPreview();
+}
+action("color-settings", () => {
+  document.body.classList.remove("focus-mode", "sessions-open");
+  document.body.classList.add("controls-open");
+  button("focus-view").textContent = "专注日志";
+  showPanel("tools");
+  $("tool-tools").scrollTop = 0;
+  if (terminalMode) requestAnimationFrame(() => fit.fit());
+});
+action("add-color-rule", () => {
+  if (colorSettings.rules.length >= MAX_COLOR_RULES) return;
+  colorSettings.rules.push({
+    keyword: "",
+    color: "#8bc9ff",
+    enabled: true,
+    caseSensitive: false,
+  });
+  renderColorRules();
+  saveColors();
+  $("color-rules")
+    .querySelector<HTMLInputElement>(".color-rule:last-child input[type=text]")
+    ?.focus();
+});
+action("reset-colors", () => {
+  colorSettings = defaultColors();
+  renderColorRules();
+  saveColors();
+});
+input("builtin-colors").addEventListener("change", () => {
+  colorSettings.builtins = input("builtin-colors").checked;
+  saveColors();
+});
+window.addEventListener("storage", (event) => {
+  if (event.key === COLOR_STORAGE_KEY) {
+    colorSettings = parseColors(event.newValue);
+    renderColorRules();
+    repaintColors();
+  }
+});
+renderColorRules();
