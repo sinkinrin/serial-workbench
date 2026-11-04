@@ -1,6 +1,6 @@
 # Legacy direct-access CLI and MCP
 
-This compatibility binary opens serial ports directly. For shared capture with the browser, use `serial-workbench`; see [README](../README.md). The macro schema version `0.3` is independent of the workbench release version.
+This compatibility binary opens serial ports directly. For shared capture with the browser, use `serial-workbench`; see [English README](../README_EN.md). The macro schema version `0.3` is independent of the workbench release version.
 
 ## Macro Automation
 

@@ -1,6 +1,6 @@
 # 旧版直接串口 CLI 与 MCP
 
-此兼容程序直接占用串口。需要与网页共用采集时，请使用 `serial-workbench`，见[README](../README_ZH.md)。宏格式版本 `0.3` 与工作台发布版本独立。
+此兼容程序直接占用串口。需要与网页共用采集时，请使用 `serial-workbench`，见[中文 README](../README.md)。宏格式版本 `0.3` 与工作台发布版本独立。
 
 ## Macro 自动化
 
